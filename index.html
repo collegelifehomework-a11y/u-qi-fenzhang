@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f4ec">
+  <meta name="description" content="u 起分帳｜多人旅行記帳與分帳">
+  <title>u 起分帳</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" data-page="home"><span class="brand-mark">u</span>起分帳</a>
+      <div class="top-actions">
+        <span id="sync-status">示範模式</span>
+        <button class="icon-button" type="button" data-action="sync" aria-label="手動同步">↻</button>
+        <button class="icon-button" type="button" data-page="settings" aria-label="設定">⚙</button>
+      </div>
+    </header>
+    <main id="view" class="view" tabindex="-1"></main>
+    <nav class="bottom-nav" aria-label="主要導覽">
+      <button type="button" data-page="home" class="nav-item">⌂<small>首頁</small></button>
+      <button type="button" data-page="trip" class="nav-item">▤<small>旅行</small></button>
+      <button type="button" data-page="expense-new" class="nav-item nav-add">＋<small>記一筆</small></button>
+      <button type="button" data-page="settlement" class="nav-item">⇄<small>結算</small></button>
+      <button type="button" data-page="members" class="nav-item">♙<small>旅伴</small></button>
+    </nav>
+  </div>
+  <dialog id="dialog" class="app-dialog"><div id="dialog-content"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "id": "./",
+  "name": "u 起分帳",
+  "short_name": "u 起分帳",
+  "description": "旅行共同記帳與分帳工具",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait-primary",
+  "background_color": "#F7F4EC",
+  "theme_color": "#244B3C",
+  "icons": [
+    {
+      "src": "./app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
