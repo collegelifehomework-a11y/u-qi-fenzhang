@@ -1,68 +1,347 @@
+/* ==============================
+   1. 全域主題設定
+   ============================== */
+
+/* 定義網站共用的顏色變數、字體、文字顏色與背景色。 */
 :root {
   --bg: #f6f4ec; --surface: #fffefa; --soft: #e7eee7; --ink: #24382e;
   --muted: #7b847c; --green: #315b45; --line: #e6e5dc; --danger: #b64c42;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans TC", sans-serif;
   color: var(--ink); background: var(--bg);
 }
+
+/* 深色模式：使用 data-theme="dark" 時，替換主要顏色變數。 */
 :root[data-theme="dark"] {
   color-scheme: dark; --bg: #171d19; --surface: #222b25; --soft: #304337;
   --ink: #edf1e9; --muted: #a6b0a7; --green: #a9c9ae; --line: #39443c;
 }
+
+/* 所有元素使用 border-box，讓寬高計算包含內距與邊框。 */
 * { box-sizing: border-box; }
+
+/* 網頁主體的基本外觀。 */
 body { margin: 0; background: var(--bg); color: var(--ink); }
+
+/* 表單控制項沿用網站設定的字體。 */
 button, input, select { font: inherit; }
+
+/* 滑鼠移到按鈕時顯示可點擊游標。 */
 button { cursor: pointer; }
+
+
+/* ==============================
+   2. 網站主要版面
+   ============================== */
+
+/* 最外層容器：限制最大寬度、至少填滿視窗高度，並預留底部空間。 */
 .app-shell { max-width: 1100px; min-height: 100dvh; margin: auto; padding: 0 18px 100px; }
+
+/* 頂部導覽列：水平排列內容，並固定在頁面捲動時的頂端。 */
 .topbar { height: 66px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 3; background: var(--bg); }
+
+/* 品牌區域：排列品牌圖示與名稱，移除連結底線。 */
 .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: var(--ink); font-weight: 800; font-size: 19px; }
+
+/* 品牌圖示：使用網格置中，設定尺寸、圓角及背景色。 */
 .brand-mark { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 11px; background: var(--green); color: white; font-size: 22px; }
+
+/* 頂部右側操作區：排列操作按鈕及狀態文字。 */
 .top-actions { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; }
+
+/* 頂部圖示按鈕：設定尺寸、邊框、圓角與背景。 */
 .icon-button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 18px; }
+
+/* 主要內容區：限制內容寬度並置中顯示。 */
 .view { max-width: 760px; margin: auto; padding: 22px 0; outline: none; }
+
+/* 首頁主視覺區塊的上下間距。 */
 .hero { padding: 18px 0 20px; }
+
+
+/* ==============================
+   3. 標題與一般文字
+   ============================== */
+
+/* 英文小標題：設定顏色、字體粗細與字距。 */
 .eyebrow { color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .13em; }
+
+/* 第一層標題：依畫面寬度調整字體大小，設定行高與間距。 */
 h1 { font-size: clamp(27px, 5vw, 35px); line-height: 1.25; margin: 8px 0; }
+
+/* 第二層標題：設定字體大小及下方間距。 */
 h2 { font-size: 19px; margin: 0 0 14px; }
+
+/* 一般段落文字：使用輔助文字顏色與適當行高。 */
 p { color: var(--muted); line-height: 1.6; }
+
+
+/* ==============================
+   4. 按鈕樣式
+   ============================== */
+
+/* 按鈕群組：允許換行，設定按鈕間距及上下外距。 */
 .actions { display: flex; flex-wrap: wrap; gap: 9px; margin: 18px 0 24px; }
+
+/* 主要按鈕：設定最小高度、內距、圓角、背景與文字樣式。 */
 .btn { min-height: 44px; padding: 13px 17px; border: 0; border-radius: 13px; background: var(--green); color: white; font-weight: 750; }
+
+/* 次要按鈕：使用淺色背景及綠色文字。 */
 .btn.secondary { background: var(--soft); color: var(--green); }
+
+/* 危險操作按鈕：例如取消或刪除資料。 */
 .btn.danger { background: #f7e7e4; color: var(--danger); }
+
+/* 小型按鈕：縮小高度、內距與字體。 */
 .btn.small { min-height: 34px; padding: 8px 12px; font-size: 12px; }
+
+
+/* ==============================
+   5. 卡片與統計區塊
+   ============================== */
+
+/* 卡片及統計區塊共用外距、內距、邊框、圓角與背景。 */
 .card, .stat { margin: 12px 0; padding: 17px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+
+/* 網格區域：預設分成左右兩欄，欄位間距為 10px。 */
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* 統計區塊的小標題：獨立成行並與數字保持間距。 */
 .stat small { display: block; margin-bottom: 7px; color: var(--muted); }
+
+/* 統計區塊中的主要數字。 */
 .stat strong { font-size: 23px; }
+
+
+/* ==============================
+   6. 區塊標題與旅行卡片
+   ============================== */
+
+/* 區塊標題列：標題與右側操作項目左右排列。 */
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 26px 0 12px; }
+
+/* 記帳日期區塊：縮小日期與卡片邊框的距離。 */
+/* 修改日期：2026-11-15 */
+.card:has(> .section-head [data-action="toggle-bookkeeping-date"]) {
+  padding: 8px;
+}
+
+/* 日期標題：移除多餘的上方外距。 */
+/* 修改日期：2026-11-15 */
+.card:has(> .section-head [data-action="toggle-bookkeeping-date"]) > .section-head {
+  margin-top: 0;
+}
+
+/* 旅行卡片：整張卡片可作為點擊區域，內容左右排列。 */
 .trip-card { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; margin: 9px 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); text-align: left; }
+
+/* 旅行名稱與旅伴名稱使用區塊顯示，讓文字各自換行。 */
 .trip-card strong, .member-info strong { display: block; }
+
+/* 旅行卡片內的資訊垂直排列。 */
+.trip-card .trip-info { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+
+/* 旅行日期、旅伴資訊及提示文字使用較小的輔助文字樣式。 */
 .trip-card small, .member-info small, .hint { color: var(--muted); font-size: 12px; }
+
+/* 一般狀態標籤：例如成員標記或一般狀態。 */
 .pill { display: inline-block; margin-top: 5px; padding: 5px 9px; border-radius: 20px; background: var(--soft); color: var(--green); font-size: 11px; }
+
+/* 待處理狀態標籤：使用橘色系背景與文字提醒。 */
 .pill.pending { background: #fff0df; color: #98602e; }
+
+
+/* ==============================
+   7. 資料列與旅伴資訊
+   ============================== */
+
+/* 資料列：內容左右排列，底部加入分隔線。 */
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+
+/* 最後一列不顯示底部邊框。 */
 .row:last-child { border: 0; }
+
+/* 旅伴資料列：頭像與文字水平排列。 */
 .member { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+
+/* 旅伴頭像：固定尺寸的圓形區域，文字置中顯示。 */
 .avatar { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 50%; background: var(--soft); color: var(--green); font-weight: 800; }
+
+/* 旅伴文字區域自動填滿剩餘空間。 */
 .member-info { flex: 1; }
+
+
+/* ==============================
+   8. 表單樣式
+   ============================== */
+
+/* 表單使用網格排列，欄位之間保留固定間距。 */
 .form { display: grid; gap: 14px; }
+
+/* 單一欄位：標籤與輸入框垂直排列。 */
 .field { display: grid; gap: 7px; }
+
+/* 表單標籤的字體大小與粗細。 */
 .field label { font-size: 13px; font-weight: 700; }
+
+/* 表單輸入框與下拉選單共用寬度、高度、內距及外觀。 */
 .field input, .field select { width: 100%; min-height: 44px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); }
+
+/* 表單欄位預設分成左右兩欄。 */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* 單選或勾選項目的外框與排列方式。 */
 .choice { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; }
+
+/* 返回按鈕：移除一般按鈕背景與邊框，呈現文字按鈕樣式。 */
 .back { padding: 8px 0; border: 0; background: none; color: var(--green); font-weight: 750; }
+
+/* 沒有資料時的提示區塊：文字置中並保留內距。 */
 .empty { padding: 28px; color: var(--muted); text-align: center; }
+
+
+/* ==============================
+   9. 底部導覽列
+   ============================== */
+
+/* 手機版底部導覽列：固定於視窗底部並水平排列。 */
 .bottom-nav { position: fixed; bottom: 0; left: 50%; z-index: 5; display: flex; width: min(100%, 1100px); justify-content: space-around; padding: 10px 8px calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%); border-top: 1px solid var(--line); background: var(--surface); }
+.bottom-nav[hidden] { display: none !important; }
+/* 導覽按鈕：圖示與文字垂直排列並置中。 */
 .nav-item { display: grid; justify-items: center; gap: 3px; border: 0; background: none; color: var(--muted); font-size: 19px; }
+
+/* 導覽按鈕中的文字標籤。 */
 .nav-item small { font-size: 10px; }
+
+/* 目前所在頁面的導覽按鈕：使用綠色並加粗文字。 */
 .nav-item.active { color: var(--green); font-weight: 800; }
-#dialog { width: min(92vw, 460px); padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--ink); }
+
+
+/* ==============================
+   10. 對話視窗
+   ============================== */
+
+/* 對話視窗：依視窗寬度調整大小，設定內距、圓角及背景。 */
+/* ==============================
+   對話視窗：全螢幕版
+   修改日期：2026-11-14
+   ============================== */
+
+/* 彈窗填滿視窗，內容過長時可在內部捲動。 */
+#dialog {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 20px;
+  border: none;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  overflow-y: auto;
+}
+
+/* 對話視窗開啟時，後方背景遮罩的顏色。 */
 #dialog::backdrop { background: #14201988; }
+
+
+/* ==============================
+   11. 提示訊息
+   ============================== */
+
+/* 提示訊息固定在畫面下方，預設透明且不接受滑鼠點擊。 */
 .toast { position: fixed; bottom: 88px; left: 50%; z-index: 8; padding: 10px 16px; transform: translateX(-50%); border-radius: 30px; background: var(--ink); color: var(--surface); opacity: 0; pointer-events: none; }
+
+/* 加入 show 類別後，讓提示訊息顯示出來。 */
 .toast.show { opacity: 1; }
+
+
+/* ==============================
+   12. 桌面版響應式設定
+   ============================== */
+
+/* 螢幕寬度達到 760px 以上時，套用桌面版配置。 */
 @media (min-width: 760px) {
-  .app-shell { padding-bottom: 25px; }
-  .bottom-nav { position: static; width: 100%; margin: 20px auto; transform: none; gap: 35px; border: 1px solid var(--line); border-radius: 16px; }
+
+  /* 桌面版不需要預留手機底部導覽列的空間。 */
+  .app-shell { padding-bottom: 100px; }
+
+  /* 桌面版導覽列改為一般區塊，不再固定於視窗底部。 */
+  .bottom-nav { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 80%; margin: 0; gap: 35px; border: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+
+  /* 增加桌面版主要內容區上方的間距。 */
   .view { padding-top: 32px; }
 }
-@media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } .card { padding: 14px; } }
+
+
+/* ==============================
+   13. 手機版響應式設定
+   ============================== */
+
+/* 螢幕寬度在 480px 以下時，調整表單與卡片配置。 */
+@media (max-width: 480px) {
+
+  /* 表單欄位改成單欄排列，避免手機畫面過窄。 */
+  .form-grid { grid-template-columns: 1fr; }
+
+  /* 縮小卡片內距，增加手機畫面可用空間。 */
+  .card { padding: 14px; }
+}
+
+/* ==============================
+   14. 付款方式介面
+   ============================== */
+
+/* 付款方式：讓標題、現金、信用卡左右排列 */
+.payment-method {
+  display: flex;       /* 使用水平排列 */
+  flex-wrap: wrap;
+  align-items: center; /* 垂直置中 */
+  gap: 12px;            /* 各項目之間的間距 */
+}
+
+/* 付款方式標題獨占一整行 */
+.payment-method > label:first-child {
+  width: 100%;
+}
+
+/* 現金與信用卡選項 */
+.payment-method .choice {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+}
+
+/* 單選圓圈恢復正常尺寸 */
+.payment-method .choice input[type="radio"] {
+  width: auto;
+  min-height: auto;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* 標題與關閉按鈕固定在同一水平列。 */
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 標題不額外增加上下間距。 */
+.dialog-header h2 {
+  margin: 0;
+}
+
+/* 關閉按鈕。 */
+.dialog-close {
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
