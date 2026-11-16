@@ -1,35 +1,107 @@
+<!---html--->
 <!doctype html>
+<!-- 宣告這是一份 HTML5 網頁文件 -->
+
 <html lang="zh-Hant">
+<!-- 設定網頁主要語言為繁體中文 -->
+
 <head>
+  <!-- 網頁基本設定 -->
+
   <meta charset="utf-8">
+  <!-- 設定文字編碼為 UTF-8，避免中文亂碼 -->
+
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- 讓網頁依照裝置螢幕寬度調整，支援手機與桌面版 -->
+
   <meta name="theme-color" content="#f6f4ec">
-  <meta name="description" content="u 起分帳｜多人旅行記帳與分帳">
-  <title>u 起分帳</title>
+  <!-- 設定支援的瀏覽器介面主題顏色 -->
+
+  <meta name="description" content="u 起旅遊分帳｜多人旅行記帳與分帳">
+  <!-- 網頁簡介，供搜尋引擎等服務參考 -->
+
+  <title>u 起旅遊分帳</title>
+  <!-- 設定瀏覽器分頁顯示的名稱 -->
+
   <link rel="manifest" href="./manifest.json">
+  <!-- 載入 PWA 網頁應用程式設定檔 -->
+
   <link rel="stylesheet" href="./style.css">
+  <!-- 載入 CSS 樣式表，控制網頁外觀 -->
 </head>
+
 <body>
+  <!-- 網頁實際顯示的內容 -->
+
   <div class="app-shell">
+    <!-- 整個應用程式的最外層容器 -->
+
     <header class="topbar">
-      <a class="brand" href="#" data-page="home"><span class="brand-mark">u</span>起分帳</a>
+      <!-- 頂部導覽區域 -->
+
+      <a class="brand" href="#" data-page="home">
+        <!-- 品牌名稱，點擊後可導向首頁 -->
+
+        <span class="brand-mark">u</span>
+        <!-- 品牌圖示 -->
+
+        起旅遊分帳
+      </a>
+
       <div class="top-actions">
+        <!-- 頂部右側操作區 -->
+
         <span id="sync-status">示範模式</span>
+        <!-- 顯示目前同步或資料連線狀態 -->
+
         <button class="icon-button" type="button" data-action="sync" aria-label="手動同步">↻</button>
-        <button class="icon-button" type="button" data-page="settings" aria-label="設定">⚙</button>
+        <!-- 手動同步按鈕 -->
+
+        <button class="icon-button" type="button" data-page="settings" aria-label="設定">⚙️</button>
+        <!-- 設定按鈕，點擊後開啟設定頁面 -->
       </div>
     </header>
+
     <main id="view" class="view" tabindex="-1"></main>
+    <!-- 主要內容顯示區域，由 JavaScript 動態切換不同頁面 -->
+
     <nav class="bottom-nav" aria-label="主要導覽">
-      <button type="button" data-page="home" class="nav-item">⌂<small>首頁</small></button>
-      <button type="button" data-page="trip" class="nav-item">▤<small>旅行</small></button>
-      <button type="button" data-page="expense-new" class="nav-item nav-add">＋<small>記一筆</small></button>
-      <button type="button" data-page="settlement" class="nav-item">⇄<small>結算</small></button>
-      <button type="button" data-page="members" class="nav-item">♙<small>旅伴</small></button>
-    </nav>
-  </div>
-  <dialog id="dialog" class="app-dialog"><div id="dialog-content"></div></dialog>
+      
+      <button type="button" data-page="trip" class="nav-item">
+    ▤<small>總覽</small>
+  </button>
+  
+  <button type="button" data-page="itinerary" class="nav-item">
+    ▦<small>行程</small>
+  </button>
+  
+  <!-- 記帳導覽：修改日期 2026-11-14 -->
+  <button type="button" data-page="bookkeeping" class="nav-item">
+    🧾<small>記帳</small>
+  </button>
+
+  <button type="button" data-page="members" class="nav-item">
+    ♙<small>旅伴</small>
+  </button>
+
+  <button type="button" data-page="settlement" class="nav-item">
+    ＄<small>結算</small>
+  </button>
+</nav>
+</div>
+
+  <dialog id="dialog" class="app-dialog">
+    <!-- 彈出式對話框，用於顯示表單或確認訊息 -->
+
+    <div id="dialog-content"></div>
+    <!-- 對話框內的內容，由 JavaScript 動態產生 -->
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <!-- 訊息提示區，例如操作成功或發生錯誤時顯示 -->
+
   <script src="./app.js" defer></script>
+  <!-- 載入 JavaScript 程式，defer 代表 HTML 解析完成後再執行 -->
+
 </body>
 </html>
