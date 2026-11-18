@@ -537,6 +537,7 @@ function renderExpenseForm() {
     // 四、折扣與回饋
     '<h3>折扣與回饋</h3>' +
 
+    '<div id="credit-card-reward-fields" hidden>' +
     '<div class="field">' +
     '<label>折扣金額</label>' +
     '<input name="discount" type="number" min="0" step="0.01" value="0">' +
@@ -544,15 +545,17 @@ function renderExpenseForm() {
 
     '<div class="field">' +
     '<label>信用卡回饋點數</label>' +
-    '<input name="reward" type="number" min="0" step="0.01" value="0">' +
+    '<input name="reward" type="number" min="0" step="1" value="0">' +
     '</div>' +
 
     '<div class="field">' +
     '<label>回饋分配方式</label>' +
     '<select name="rewardAllocation">' +
     '<option value="proportional">依各旅伴實際消費比例分配</option>' +
-    '<option value="payer">全部歸刷卡人</option>' +
+    '<option value="cardholder">全部歸刷卡人</option>' +
     '</select></div>' +
+
+    '</div>' +
 
     // 五、分攤方式
     '<h3>分攤方式</h3>' +
@@ -1270,13 +1273,52 @@ function renderItinerary() {
       // 取得日幣金額文字。
       const jpyText = String(form.get("jpy") || "");
 
+      
       // 取得台幣金額文字，並移除前後空白。
       const twdText = String(form.get("twd") || "").trim();
 
-      // 驗證日幣金額：
+      // 先驗證原始日幣金額。
       // 必須大於 0，且最多只能有一位小數。
-      if (!/^(0|[1-9][0-9]*)(\.[0-9])?$/.test(jpyText) || Number(jpyText) <= 0) {
+      if (!/^(0|[1-9]\d*)(\.\d)?$/.test(jpyText) || Number(jpyText) <= 0) {
         showToast("請輸入大於 0、最多一位小數的日幣金額");
+        return;
+      }
+
+      // 取得折扣金額（日圓），空白視為 0。
+      const discountText = String(form.get("discount") || "").trim();
+      const discountValue = discountText === "" ? 0 : Number(discountText);
+
+      // 驗證折扣金額。
+      // 必須是非負數，最多一位小數，且不得超過原始消費金額。
+      if (
+        (discountText !== "" && !/^(0|[1-9]\d*)(\.\d)?$/.test(discountText)) ||
+        !Number.isFinite(discountValue) ||
+        discountValue < 0 ||
+        discountValue > Number(jpyText)
+      ) {
+        showToast("折扣金額不可小於 0 或大於消費金額，且最多一位小數");
+        return;
+      }
+
+      // 計算折扣後金額（日圓）。
+      const finalJpy = Number((Number(jpyText) - discountValue).toFixed(1));
+
+      // 取得信用卡回饋點數，空白視為 0。
+      const rewardText = String(form.get("reward") || "").trim();
+      const rewardValue = rewardText === "" ? 0 : Number(rewardText);
+
+      // 驗證回饋點數：必須是非負安全整數。
+      if (!Number.isSafeInteger(rewardValue) || rewardValue < 0) {
+        showToast("信用卡回饋點數請輸入非負整數");
+        return;
+      }
+
+      // 取得回饋分配方式。
+      const rewardAllocation = String(form.get("rewardAllocation") || "");
+
+      // 只允許兩種分配方式。
+      if (!["proportional", "cardholder"].includes(rewardAllocation)) {
+        showToast("請選擇有效的回饋分配方式");
         return;
       }
 
@@ -1313,8 +1355,14 @@ function renderItinerary() {
         // 儲存支出分類。
         category: form.get("category"),
 
-        // 儲存日幣金額。
+        // 原始消費金額。
         jpy: Number(jpyText),
+
+        // 折扣金額（日圓）。
+        discount: discountValue,
+
+        // 折扣後金額（日圓）。
+        finalJpy: finalJpy,
 
         // 儲存台幣金額；可能為 null。
         twd: twdValue,
@@ -1324,6 +1372,12 @@ function renderItinerary() {
 
         // 儲存付款人。
         payer: form.get("payer"),
+
+        // 儲存信用卡回饋點數。
+        reward: rewardValue,
+
+        // 儲存信用卡回饋分配方式。
+        rewardAllocation: rewardAllocation,
 
         // 台幣尚未填寫時標記為待補；
         // 已填寫時標記為待後端確認。
