@@ -845,7 +845,7 @@
         dragTimer = setTimeout(() => {
           showToast("請先收合品項卡片");
           dragTimer = null;
-        }, 1500);
+        }, 1000);
         return;
       }
 
@@ -873,7 +873,7 @@
 
         card.parentNode.insertBefore(dragPlaceholder, card);
         dragTimer = null;
-      }, 1500);
+      }, 1000);
     });
 
     const onPointerMove = (e) => {
