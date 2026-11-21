@@ -345,3 +345,336 @@ p { color: var(--muted); line-height: 1.6; }
   line-height: 1;
   cursor: pointer;
 }
+
+.expense-basic-info {
+  display: grid;
+  gap: 14px;
+  margin: -21px -7px 0;
+}
+
+.expense-basic-info {
+  /* 原本設定保持不變 */
+}
+
+#credit-card-reward-fields .form-grid {
+  align-items: start;
+}
+
+#credit-card-reward-fields .field {
+  grid-template-rows: auto 44px auto;
+}
+
+/* 修改日期：2026-11-19 */
+/* 僅縮小新增支出頁面內的標題與欄位標籤間距 */
+#expense-form h3 {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+
+#expense-form .field {
+  gap: 4px;
+}
+
+/* ==============================
+   15. 消費品項明細與卡片樣式
+   修改日期：2026-11-20
+   ============================== */
+
+/* 消費記錄模式切換器 */
+.expense-mode-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.expense-mode-toggle .choice {
+  flex: 1;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.expense-mode-toggle .choice input[type="radio"] {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+}
+
+.expense-mode-toggle .choice.active,
+.expense-mode-toggle .choice:has(input:checked) {
+  border-color: var(--green);
+  background: var(--soft);
+  font-weight: 700;
+  color: var(--green);
+}
+
+/* 唯讀自動計算的日幣輸入框 */
+input.readonly-calc {
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 700;
+  cursor: default;
+}
+
+/* 逐項記錄摘要卡片 */
+.itemized-summary {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.itemized-summary-grid {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.itemized-summary-grid small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.itemized-summary-grid strong {
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.itemized-calc-hint {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+
+.itemized-calc-hint .hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 品項卡片清單容器 */
+.expense-items-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  position: relative;
+}
+
+.item-empty-tip {
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
+/* 單一品項卡片共用 */
+.expense-item-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+/* 收合卡片外觀（依 2026-11-20 規格：僅顯示名稱與折後金額） */
+.expense-item-card.collapsed {
+  cursor: pointer;
+  padding: 10px 14px;
+}
+
+.expense-item-card.collapsed:hover {
+  border-color: var(--green);
+}
+
+.item-card-collapsed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.item-summary-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.item-summary-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-summary-net {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--green);
+  white-space: nowrap;
+}
+
+.item-delete-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.item-delete-btn:hover {
+  background: #f7e7e4;
+  color: var(--danger);
+}
+
+/* 展開卡片外觀（完整編輯欄位，底部僅設儲存按鈕） */
+.expense-item-card.expanded {
+  border: 1.5px solid var(--green);
+  padding: 14px;
+  box-shadow: 0 4px 14px rgba(49, 91, 69, 0.08);
+  user-select: auto;
+}
+
+.item-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.item-card-title {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--green);
+}
+
+.item-delete-btn-header {
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.item-delete-btn-header:hover {
+  background: #f7e7e4;
+}
+
+.item-form-body {
+  display: grid;
+  gap: 10px;
+}
+
+.item-field-group label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.required-star {
+  color: var(--danger);
+  font-weight: bold;
+}
+
+.optional-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+/* 即時小計欄 */
+.item-calc-preview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--soft);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.item-calc-preview b {
+  color: var(--ink);
+}
+
+.item-calc-preview .calc-net-total b {
+  color: var(--green);
+  font-size: 14px;
+}
+
+/* 卡片底部操作區（規格規定僅設儲存） */
+.item-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* 拖曳狀態回饋（依 2026-11-20 規格：卡片稍微放大並呈現浮起效果） */
+.expense-item-card.is-dragging {
+  transform: scale(1.03);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  opacity: 0.95;
+  background: var(--surface);
+  cursor: grabbing !important;
+  border-color: var(--green);
+}
+
+/* 拖曳過程中的虛線空位佔位符（依 2026-11-20 規格：原位置顯示虛線空位） */
+.drag-placeholder {
+  border: 2px dashed var(--green);
+  border-radius: 14px;
+  background: rgba(49, 91, 69, 0.08);
+  margin: 4px 0;
+  min-height: 50px;
+  pointer-events: none;
+  transition: height 0.15s ease;
+}
+
+/* 錯誤提示與輸入框高亮（依 Notion 規格） */
+.item-field-group input.has-error {
+  border-color: var(--danger) !important;
+  background-color: #fff6f5 !important;
+}
+
+:root[data-theme="dark"] .item-field-group input.has-error {
+  background-color: #381f1d !important;
+}
+
+.item-error {
+  display: block;
+  color: var(--danger);
+  font-size: 11px;
+  margin-top: 3px;
+  min-height: 14px;
+}
