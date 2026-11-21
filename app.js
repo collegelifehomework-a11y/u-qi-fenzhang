@@ -819,6 +819,9 @@
   let dragMoved = false;
   let activePointerId = null;
   let activeCaptureTarget = null;
+  // 記錄手指在卡片上的抓取位置，避免卡片移動時偏移
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
 
   function initItemDragAndDrop() {
     const listContainer = document.getElementById("expense-items-list");
@@ -867,12 +870,36 @@
         }
 
         // 依 2026-11-20 規格：原位置顯示虛線空位
-        dragPlaceholder = document.createElement("div");
-        dragPlaceholder.className = "drag-placeholder";
-        dragPlaceholder.style.height = (card.offsetHeight || 52) + "px";
+// 建立原位置的虛線佔位
+const rect = card.getBoundingClientRect();
 
-        card.parentNode.insertBefore(dragPlaceholder, card);
-        dragTimer = null;
+dragPlaceholder = document.createElement("div");
+dragPlaceholder.className = "drag-placeholder";
+dragPlaceholder.style.height = rect.height + "px";
+dragPlaceholder.style.width = rect.width + "px";
+dragPlaceholder.style.boxSizing = "border-box";
+
+card.parentNode.insertBefore(dragPlaceholder, card);
+
+// 記錄手指抓取卡片的位置
+dragOffsetX = e.clientX - rect.left;
+dragOffsetY = e.clientY - rect.top;
+
+// 將卡片改為浮動狀態，讓它跟隨手指
+card.style.position = "fixed";
+card.style.left = rect.left + "px";
+card.style.top = rect.top + "px";
+card.style.width = rect.width + "px";
+card.style.boxSizing = "border-box";
+card.style.margin = "0";
+card.style.zIndex = "1000";
+card.style.pointerEvents = "none";
+card.style.transition = "none";
+card.style.transform = "scale(1.03)";
+card.style.boxShadow = "0 12px 28px rgba(0, 0, 0, 0.2)";
+card.style.willChange = "left, top";
+
+dragTimer = null;
       }, 1000);
     });
 
@@ -890,27 +917,37 @@
       }
 
       // 拖曳模式中：即時更新虛線佔位空位位置
-      if (dragActive && draggedItemElement && dragPlaceholder) {
-        e.preventDefault();
+// 拖曳模式中：卡片跟隨手指，其他卡片即時讓位
+if (dragActive && draggedItemElement && dragPlaceholder) {
+  e.preventDefault();
 
-        const siblingCards = Array.from(listContainer.querySelectorAll(".expense-item-card:not(.is-dragging)"));
-        let insertBeforeNode = null;
+  // 讓浮動卡片跟隨手指移動
+  draggedItemElement.style.left = (e.clientX - dragOffsetX) + "px";
+  draggedItemElement.style.top = (e.clientY - dragOffsetY) + "px";
 
-        for (const sibling of siblingCards) {
-          const rect = sibling.getBoundingClientRect();
-          const midY = rect.top + rect.height / 2;
-          if (e.clientY < midY) {
-            insertBeforeNode = sibling;
-            break;
-          }
-        }
+  // 依手指位置調整虛線佔位
+  const siblingCards = Array.from(
+    listContainer.querySelectorAll(".expense-item-card:not(.is-dragging)")
+  );
 
-        if (insertBeforeNode) {
-          listContainer.insertBefore(dragPlaceholder, insertBeforeNode);
-        } else {
-          listContainer.appendChild(dragPlaceholder);
-        }
-      }
+  let insertBeforeNode = null;
+
+  for (const sibling of siblingCards) {
+    const rect = sibling.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+
+    if (e.clientY < midY) {
+      insertBeforeNode = sibling;
+      break;
+    }
+  }
+
+  if (insertBeforeNode) {
+    listContainer.insertBefore(dragPlaceholder, insertBeforeNode);
+  } else {
+    listContainer.appendChild(dragPlaceholder);
+  }
+}
     };
 
     const endDragOrPress = (e) => {
