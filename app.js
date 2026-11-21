@@ -141,6 +141,7 @@
         twd: 1056,
         method: "現金",
         payer: "我",
+        split: "equal",
         status: "已確認"
       },
       {
@@ -153,6 +154,7 @@
         twd: 264,
         method: "信用卡",
         payer: "小安",
+        split: "equal",
         status: "已確認"
       },
       {
@@ -165,6 +167,7 @@
         twd: null,
         method: "現金",
         payer: "阿哲",
+        split: "equal",
         status: "待補"
       }
     ],
@@ -478,101 +481,664 @@
 
 
 
-function renderExpenseForm() {
+  // ==========================================
+  // 消費品項明細管理與狀態（新增支出使用）
+  // 依 2026-11-19 / 2026-11-20 Notion 規格實作
+  // ==========================================
 
-  // 修改日期：2026-11-16
-  // 新增支出表單：保留現有 submit 所需欄位，調整介面結構。
+  const expenseDraft = {
+    mode: "direct", // "direct"（直接輸入總額）或 "itemized"（逐項記錄）
+    items: [],
+    expandedItemId: null
+  };
 
-  return pageHeader("NEW EXPENSE", "新增支出", "先記錄消費，再確認付款與分帳細節。") +
+  // 重置支出品項暫存
+  function resetExpenseDraft(mode = "direct") {
+    expenseDraft.mode = mode;
+    expenseDraft.items = [];
+    expenseDraft.expandedItemId = null;
+  }
 
-    '<form id="expense-form" class="card form">' +
+  // 四捨五入至小數點後一位
+  const round1 = (num) => Math.round((Number(num) + Number.EPSILON) * 10) / 10;
 
-    // 一、基本資料
-    '<h3>基本資料</h3>' +
+  // 計算單一品項的原始小計、折扣與折後金額
+  function getItemCalculations(item) {
+    const qty = Number(item.quantity) || 0;
+    const price = Number(item.unitPrice) || 0;
+    const gross = round1(qty * price);
+    const discount = Number(item.discount) || 0;
+    const net = Math.max(0, round1(gross - discount));
+    return { gross, discount, net };
+  }
 
-    '<div class="field"><label for="expense-title">支出名稱</label>' +
-    '<input id="expense-title" name="title" required maxlength="80" placeholder="例如：博多拉麵"></div>' +
+  // 計算所有品項的合計（日圓）
+  function calculateItemsTotal() {
+    let totalGross = 0;
+    let totalDiscount = 0;
+    let totalNet = 0;
+    for (const item of expenseDraft.items) {
+      const calc = getItemCalculations(item);
+      totalGross = round1(totalGross + calc.gross);
+      totalDiscount = round1(totalDiscount + calc.discount);
+      totalNet = round1(totalNet + calc.net);
+    }
+    return {
+      count: expenseDraft.items.length,
+      totalGross,
+      totalDiscount,
+      totalNet
+    };
+  }
 
-    '<div class="form-grid">' +
-    '<div class="field"><label>消費日期</label>' +
-    '<input name="date" type="date" value="' + today(state.trip.timezone) + '" required></div>' +
+  // 產生單一品項卡片的 HTML
+  function renderItemCard(item, index) {
+    const isExpanded = expenseDraft.expandedItemId === item.id;
+    const calc = getItemCalculations(item);
 
-    '<div class="field"><label>支出分類</label>' +
-    '<select name="category">' +
-    '<option value="餐飲">餐飲</option>' +
-    '<option value="交通">交通</option>' +
-    '<option value="住宿">住宿</option>' +
-    '<option value="購物">購物</option>' +
-    '<option value="門票">門票</option>' +
-    '<option value="其他">其他</option>' +
-    '</select></div></div>' +
+    if (!isExpanded) {
+      // 收合狀態（依 2026-11-20 規格：僅顯示品項名稱與折後金額，不顯示數量與單價）
+      return (
+        '<div class="expense-item-card collapsed" data-item-id="' + escapeHtml(item.id) + '" data-index="' + index + '">' +
+          '<div class="item-card-collapsed-row">' +
+            '<span class="drag-handle" title="按住約 1.5 秒可拖曳排序" aria-label="拖曳手柄">⋮⋮</span>' +
+            '<div class="item-summary-info">' +
+              '<span class="item-summary-name">' + escapeHtml(item.name || "（未命名品項）") + '</span>' +
+              '<span class="item-summary-net">¥' + calc.net.toLocaleString("zh-TW") + '</span>' +
+            '</div>' +
+            '<button type="button" class="item-delete-btn" data-action="delete-item" data-id="' + escapeHtml(item.id) + '" title="刪除品項" aria-label="刪除品項">🗑️</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }
 
-    // 二、消費明細
-    '<h3>消費明細</h3>' +
+    // 展開狀態：完整編輯欄位，底部僅設「儲存」按鈕（依 2026-11-20 規格不設「取消」按鈕）
+    return (
+      '<div class="expense-item-card expanded" data-item-id="' + escapeHtml(item.id) + '" data-index="' + index + '">' +
+        '<div class="item-card-header">' +
+          '<span class="item-card-title">品項 #' + (index + 1) + '</span>' +
+          '<button type="button" class="item-delete-btn-header" data-action="delete-item" data-id="' + escapeHtml(item.id) + '" title="刪除品項" aria-label="刪除品項">🗑️ 刪除</button>' +
+        '</div>' +
 
-    '<div class="field">' +
-    '<label>日幣消費總額</label>' +
-    '<input name="jpy" inputmode="decimal" required placeholder="例如 1500.5">' +
-    '<small class="hint">最多一位小數。</small></div>' +
+        '<div class="item-form-body">' +
+          '<div class="field item-field-group">' +
+            '<label>品項名稱 <span class="required-star">*</span></label>' +
+            '<input type="text" class="item-input-name" maxlength="80" value="' + escapeHtml(item.name || "") + '" placeholder="例如：博多拉麵">' +
+            '<small class="item-error error-name"></small>' +
+          '</div>' +
 
-    // 三、付款資訊
-    '<h3>付款資訊</h3>' +
+          '<div class="form-grid">' +
+            '<div class="field item-field-group">' +
+              '<label>數量 <span class="required-star">*</span></label>' +
+              '<input type="number" class="item-input-qty" step="0.1" min="0.1" inputmode="decimal" value="' + (item.quantity !== undefined && item.quantity !== "" ? item.quantity : "") + '" placeholder="例如：1">' +
+              '<small class="item-error error-qty"></small>' +
+            '</div>' +
 
-    '<div class="field payment-method"><label>付款方式</label>' +
-    '<label class="choice"><input type="radio" name="method" value="現金" checked>現金</label>' +
-    '<label class="choice"><input type="radio" name="method" value="信用卡">信用卡</label></div>' +
+            '<div class="field item-field-group">' +
+              '<label>單位 <span class="optional-hint">(選填)</span></label>' +
+              '<input type="text" class="item-input-unit" maxlength="10" value="' + escapeHtml(item.unit || "") + '" placeholder="例如：碗、份、個">' +
+            '</div>' +
+          '</div>' +
 
-    '<div class="form-grid">' +
-    '<div class="field"><label>實際台幣金額</label>' +
-    '<input name="twd" type="number" min="0" step="1" placeholder="待補可留空"></div>' +
+          '<div class="form-grid">' +
+            '<div class="field item-field-group">' +
+              '<label>單價 (日圓) <span class="required-star">*</span></label>' +
+              '<input type="number" class="item-input-price" step="0.1" min="0.1" inputmode="decimal" value="' + (item.unitPrice !== undefined && item.unitPrice !== "" ? item.unitPrice : "") + '" placeholder="例如：950">' +
+              '<small class="item-error error-price"></small>' +
+            '</div>' +
 
-    '<div class="field"><label>付款人</label>' +
-    '<select name="payer">' +
-    state.members.map((member) =>
-      '<option value="' + escapeHtml(member.name) + '">' +
-      escapeHtml(member.name) + '</option>'
-    ).join("") +
-    '</select></div></div>' +
+            '<div class="field item-field-group">' +
+              '<label>品項折扣 (日圓) <span class="optional-hint">(選填)</span></label>' +
+              '<input type="number" class="item-input-discount" step="0.1" min="0" inputmode="decimal" value="' + (item.discount !== undefined ? item.discount : 0) + '" placeholder="0">' +
+              '<small class="item-error error-discount"></small>' +
+            '</div>' +
+          '</div>' +
 
-    // 四、折扣與回饋
-    '<h3>折扣與回饋</h3>' +
+          '<div class="field item-field-group">' +
+            '<label>備註 <span class="optional-hint">(選填)</span></label>' +
+            '<input type="text" class="item-input-note" maxlength="100" value="' + escapeHtml(item.note || "") + '" placeholder="選填備註，如口味、贈品等">' +
+          '</div>' +
 
-    '<div id="credit-card-reward-fields" hidden>' +
-    '<div class="field">' +
-    '<label>折扣金額</label>' +
-    '<input name="discount" type="number" min="0" step="0.01" value="0">' +
-    '<small class="hint">折扣明細及分配計算將於下一階段實作。</small></div>' +
+          '<div class="item-calc-preview">' +
+            '<span>原始：<b class="calc-gross">¥' + calc.gross.toLocaleString("zh-TW") + '</b></span>' +
+            '<span>折抵：<b class="calc-discount">-¥' + calc.discount.toLocaleString("zh-TW") + '</b></span>' +
+            '<span class="calc-net-total">折後：<b class="calc-net">¥' + calc.net.toLocaleString("zh-TW") + '</b></span>' +
+          '</div>' +
 
-    '<div class="field">' +
-    '<label>信用卡回饋點數</label>' +
-    '<input name="reward" type="number" min="0" step="1" value="0">' +
-    '</div>' +
+          '<div class="item-card-actions">' +
+            '<button type="button" class="btn small" data-action="save-item" data-id="' + escapeHtml(item.id) + '">儲存</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
 
-    '<div class="field">' +
-    '<label>回饋分配方式</label>' +
-    '<select name="rewardAllocation">' +
-    '<option value="proportional">依各旅伴實際消費比例分配</option>' +
-    '<option value="cardholder">全部歸刷卡人</option>' +
-    '</select></div>' +
+  // 產生所有品項卡片 HTML
+  function renderExpenseItemsListHtml() {
+    if (expenseDraft.items.length === 0) {
+      return '<div class="item-empty-tip">尚未加入品項，點擊下方「＋ 新增品項」開始記錄。</div>';
+    }
+    return expenseDraft.items.map((item, index) => renderItemCard(item, index)).join("");
+  }
 
-    '</div>' +
+  // 更新品項列表 DOM 與總額
+  function updateExpenseItemsDOM() {
+    const listEl = document.getElementById("expense-items-list");
+    if (listEl) {
+      listEl.innerHTML = renderExpenseItemsListHtml();
+    }
+    updateExpenseTotalsUI();
+    initItemDragAndDrop();
+  }
 
-    // 五、分攤方式
-    '<h3>分攤方式</h3>' +
+  // 更新品項統計與日幣消費總額輸入框
+  function updateExpenseTotalsUI() {
+    const totals = calculateItemsTotal();
+    const countEl = document.getElementById("summary-items-count");
+    const totalEl = document.getElementById("summary-items-total");
+    const jpyInput = document.querySelector('#expense-form input[name="jpy"]');
+    const hintEl = document.getElementById("expense-jpy-hint");
 
-    '<div class="field">' +
-    '<select name="split">' +
-    '<option value="equal">平均分攤</option>' +
-    '<option value="exact">自訂金額</option>' +
-    '<option value="items">依品項分攤</option>' +
-    '</select>' +
-    '<small class="hint">分攤計算與品項明細互動將於下一階段實作。</small></div>' +
+    if (countEl) countEl.textContent = totals.count;
+    if (totalEl) totalEl.textContent = "¥" + totals.totalNet.toLocaleString("zh-TW");
 
-    // 儲存
-    '<button class="btn" type="submit">儲存支出（本機示範）</button>' +
+    if (jpyInput && expenseDraft.mode === "itemized") {
+      jpyInput.value = totals.totalNet > 0 ? totals.totalNet : (totals.count > 0 ? 0 : "");
+      jpyInput.readOnly = true;
+      jpyInput.classList.add("readonly-calc");
+      if (hintEl) hintEl.textContent = "逐項記錄模式：由下方品項折後金額自動加總。";
+    }
+  }
 
-    '</form>';
-}
+  // 切換消費記錄模式（直接輸入總額 vs 逐項記錄）
+  function setExpenseMode(mode) {
+    expenseDraft.mode = mode;
+    const itemizedSection = document.getElementById("itemized-section");
+    const jpyInput = document.querySelector('#expense-form input[name="jpy"]');
+    const hintEl = document.getElementById("expense-jpy-hint");
+    const splitSelect = document.querySelector('#expense-form select[name="split"]');
+    const choices = document.querySelectorAll(".expense-mode-toggle .choice");
+
+    choices.forEach((c) => {
+      const radio = c.querySelector('input[type="radio"]');
+      if (radio) {
+        c.classList.toggle("active", radio.value === mode);
+      }
+    });
+
+    if (mode === "itemized") {
+      if (itemizedSection) itemizedSection.hidden = false;
+      if (jpyInput) {
+        jpyInput.readOnly = true;
+        jpyInput.classList.add("readonly-calc");
+      }
+      if (hintEl) hintEl.textContent = "逐項記錄模式：由下方品項折後金額自動加總。";
+      if (splitSelect) {
+        const itemSplitOpt = splitSelect.querySelector('option[value="items"]');
+        if (itemSplitOpt) itemSplitOpt.disabled = false;
+      }
+      // 若尚未有品項，自動新增一筆並展開
+      if (expenseDraft.items.length === 0) {
+        const newItem = {
+          id: uid(),
+          name: "",
+          quantity: 1,
+          unit: "",
+          unitPrice: "",
+          discount: 0,
+          note: ""
+        };
+        expenseDraft.items.push(newItem);
+        expenseDraft.expandedItemId = newItem.id;
+      }
+      updateExpenseItemsDOM();
+    } else {
+      // 直接輸入總額模式
+      if (itemizedSection) itemizedSection.hidden = true;
+      if (jpyInput) {
+        jpyInput.readOnly = false;
+        jpyInput.classList.remove("readonly-calc");
+      }
+      if (hintEl) hintEl.textContent = "最多一位小數。";
+      if (splitSelect) {
+        const itemSplitOpt = splitSelect.querySelector('option[value="items"]');
+        if (itemSplitOpt) {
+          itemSplitOpt.disabled = true;
+          if (splitSelect.value === "items") {
+            splitSelect.value = "equal";
+          }
+        }
+      }
+    }
+  }
+
+  // 儲存單一品項卡片並驗證
+  function saveItemFromCard(card) {
+    if (!card) return true;
+    const itemId = card.dataset.itemId;
+    const item = expenseDraft.items.find((it) => it.id === itemId);
+    if (!item) return true;
+
+    const nameInput = card.querySelector(".item-input-name");
+    const qtyInput = card.querySelector(".item-input-qty");
+    const unitInput = card.querySelector(".item-input-unit");
+    const priceInput = card.querySelector(".item-input-price");
+    const discountInput = card.querySelector(".item-input-discount");
+    const noteInput = card.querySelector(".item-input-note");
+
+    const nameVal = (nameInput ? nameInput.value : "").trim();
+    const qtyVal = (qtyInput ? qtyInput.value : "").trim();
+    const unitVal = (unitInput ? unitInput.value : "").trim();
+    const priceVal = (priceInput ? priceInput.value : "").trim();
+    const discountVal = (discountInput ? discountInput.value : "").trim();
+    const noteVal = (noteInput ? noteInput.value : "").trim();
+
+    // 清除舊的錯誤提示與紅框
+    card.querySelectorAll(".item-error").forEach((el) => { el.textContent = ""; });
+    card.querySelectorAll(".has-error").forEach((el) => { el.classList.remove("has-error"); });
+
+    const errors = {};
+
+    // 1. 品項名稱驗證：必填
+    if (!nameVal) {
+      errors.name = "請輸入品項名稱";
+    }
+
+    // 2. 數量驗證：必填且大於 0，最多 1 位小數
+    if (!qtyVal) {
+      errors.qty = "請輸入數量";
+    } else if (!/^(0|[1-9]\d*)(\.\d)?$/.test(qtyVal) || Number(qtyVal) <= 0) {
+      errors.qty = "數量必須大於 0，最多一位小數";
+    }
+
+    // 3. 單價驗證：必填且大於 0，最多 1 位小數
+    if (!priceVal) {
+      errors.price = "請輸入單價";
+    } else if (!/^(0|[1-9]\d*)(\.\d)?$/.test(priceVal) || Number(priceVal) <= 0) {
+      errors.price = "單價必須大於 0，最多一位小數";
+    }
+
+    // 4. 品項折扣驗證：選填，非負數且不可大於品項金額
+    if (discountVal !== "") {
+      if (!/^(0|[1-9]\d*)(\.\d)?$/.test(discountVal) || Number(discountVal) < 0) {
+        errors.discount = "折扣不可小於 0，最多一位小數";
+      } else if (!errors.qty && !errors.price) {
+        const gross = round1(Number(qtyVal) * Number(priceVal));
+        if (Number(discountVal) > gross) {
+          errors.discount = "折扣不可大於品項金額 (¥" + gross + ")";
+        }
+      }
+    }
+
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      // 顯示錯誤訊息與紅框
+      errorKeys.forEach((key) => {
+        const errEl = card.querySelector(".error-" + key);
+        const inpEl = card.querySelector(".item-input-" + key);
+        if (errEl) errEl.textContent = errors[key];
+        if (inpEl) inpEl.classList.add("has-error");
+      });
+
+      // 依 Notion 規格：卡片保持展開，自動捲動至第一個錯誤欄位並聚焦
+      const firstKey = errorKeys[0];
+      const firstInput = card.querySelector(".item-input-" + firstKey);
+      if (firstInput) {
+        firstInput.scrollIntoView({ behavior: "smooth", block: "center" });
+        firstInput.focus();
+      }
+      return false;
+    }
+
+    // 驗證通過：更新品項資料
+    item.name = nameVal;
+    item.quantity = Number(qtyVal);
+    item.unit = unitVal;
+    item.unitPrice = Number(priceVal);
+    item.discount = discountVal === "" ? 0 : Number(discountVal);
+    item.note = noteVal;
+
+    // 自動收合卡片
+    expenseDraft.expandedItemId = null;
+    updateExpenseItemsDOM();
+    showToast("品項已儲存");
+    return true;
+  }
+
+  // ==========================================
+  // 品項長按 1.5 秒拖曳排序與展開收合管理
+  // ==========================================
+
+  let dragTimer = null;
+  let dragActive = false;
+  let draggedItemElement = null;
+  let dragPlaceholder = null;
+  let dragPointerStartX = 0;
+  let dragPointerStartY = 0;
+  let isPointerDown = false;
+  let dragMoved = false;
+  let activePointerId = null;
+  let activeCaptureTarget = null;
+
+  function initItemDragAndDrop() {
+    const listContainer = document.getElementById("expense-items-list");
+    if (!listContainer || listContainer.dataset.dragInitialized) return;
+    listContainer.dataset.dragInitialized = "true";
+
+    listContainer.addEventListener("pointerdown", (e) => {
+      // 排除按鈕、輸入框、下拉選單等互動元件
+      if (e.target.closest("button, input, select, textarea, .item-delete-btn, .item-delete-btn-header")) return;
+
+      const card = e.target.closest(".expense-item-card");
+      if (!card) return;
+
+      isPointerDown = true;
+      dragMoved = false;
+      dragPointerStartX = e.clientX;
+      dragPointerStartY = e.clientY;
+      activePointerId = e.pointerId != null ? e.pointerId : null;
+      activeCaptureTarget = card;
+
+      // 若卡片處於展開狀態，或有任何卡片展開：
+      if (card.classList.contains("expanded") || expenseDraft.expandedItemId !== null) {
+        // 依 2026-11-20 規格：若卡片仍處於展開編輯狀態，長按 1.5 秒不啟動拖曳，提示「請先收合品項卡片」
+        dragTimer = setTimeout(() => {
+          showToast("請先收合品項卡片");
+          dragTimer = null;
+        }, 1500);
+        return;
+      }
+
+      // 收合狀態的卡片：長按 1.5 秒進入拖曳排序模式
+      dragTimer = setTimeout(() => {
+        dragActive = true;
+        draggedItemElement = card;
+        card.classList.add("is-dragging");
+
+        // 啟用 Pointer Capture 確保指標移出容器外放開也能正常收到事件
+        if (e.pointerId != null && card.setPointerCapture) {
+          try {
+            card.setPointerCapture(e.pointerId);
+          } catch (_) {}
+        }
+
+        if (navigator.vibrate) {
+          try { navigator.vibrate(50); } catch (_) {}
+        }
+
+        // 依 2026-11-20 規格：原位置顯示虛線空位
+        dragPlaceholder = document.createElement("div");
+        dragPlaceholder.className = "drag-placeholder";
+        dragPlaceholder.style.height = (card.offsetHeight || 52) + "px";
+
+        card.parentNode.insertBefore(dragPlaceholder, card);
+        dragTimer = null;
+      }, 1500);
+    });
+
+    const onPointerMove = (e) => {
+      if (!isPointerDown) return;
+
+      // 手勢位移容錯（8px）：若在長按前移動，取消長按定時器（允許正常滾動頁面）
+      if (dragTimer) {
+        const dist = Math.hypot(e.clientX - dragPointerStartX, e.clientY - dragPointerStartY);
+        if (dist > 8) {
+          clearTimeout(dragTimer);
+          dragTimer = null;
+          dragMoved = true;
+        }
+      }
+
+      // 拖曳模式中：即時更新虛線佔位空位位置
+      if (dragActive && draggedItemElement && dragPlaceholder) {
+        e.preventDefault();
+
+        const siblingCards = Array.from(listContainer.querySelectorAll(".expense-item-card:not(.is-dragging)"));
+        let insertBeforeNode = null;
+
+        for (const sibling of siblingCards) {
+          const rect = sibling.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            insertBeforeNode = sibling;
+            break;
+          }
+        }
+
+        if (insertBeforeNode) {
+          listContainer.insertBefore(dragPlaceholder, insertBeforeNode);
+        } else {
+          listContainer.appendChild(dragPlaceholder);
+        }
+      }
+    };
+
+    const endDragOrPress = (e) => {
+      if (!isPointerDown) return;
+      isPointerDown = false;
+
+      // 釋放 Pointer Capture
+      if (activePointerId != null && activeCaptureTarget && activeCaptureTarget.releasePointerCapture) {
+        try {
+          activeCaptureTarget.releasePointerCapture(activePointerId);
+        } catch (_) {}
+      }
+      activePointerId = null;
+      activeCaptureTarget = null;
+
+      // 短按放開（未滿 1.5 秒且非滾動移動）
+      if (dragTimer) {
+        clearTimeout(dragTimer);
+        dragTimer = null;
+
+        if (!dragMoved && e && e.target) {
+          const card = e.target.closest(".expense-item-card");
+          if (card) {
+            const cardId = card.dataset.itemId;
+            // 點擊已展開卡片收合前：依規格先驗證保存，若失敗維持展開並定位錯誤欄位，不得因收合遺失修改
+            if (expenseDraft.expandedItemId === cardId) {
+              if (!saveItemFromCard(card)) {
+                return; // 驗證未通過，保持原卡片展開
+              }
+            } else {
+              // 點擊收合卡片展開前，若原本有其他卡片展開，先驗證並儲存
+              if (expenseDraft.expandedItemId) {
+                const prevCard = listContainer.querySelector(".expense-item-card.expanded");
+                if (prevCard && !saveItemFromCard(prevCard)) {
+                  return; // 原卡片有驗證錯誤，保持原卡片展開
+                }
+              }
+              expenseDraft.expandedItemId = cardId;
+              updateExpenseItemsDOM();
+            }
+          }
+        }
+        return;
+      }
+
+      // 拖曳結束（放開後更新排序）
+      if (dragActive && draggedItemElement && dragPlaceholder) {
+        dragActive = false;
+
+        const siblingCards = Array.from(listContainer.querySelectorAll(".expense-item-card:not(.is-dragging)"));
+        let targetIndex = 0;
+        for (const sib of siblingCards) {
+          if (dragPlaceholder.compareDocumentPosition(sib) & Node.DOCUMENT_POSITION_PRECEDING) {
+            targetIndex++;
+          }
+        }
+
+        const oldIndex = Number(draggedItemElement.dataset.index);
+
+        draggedItemElement.classList.remove("is-dragging");
+        if (dragPlaceholder.parentNode) {
+          dragPlaceholder.parentNode.removeChild(dragPlaceholder);
+        }
+        dragPlaceholder = null;
+        draggedItemElement = null;
+
+        if (oldIndex >= 0 && targetIndex >= 0 && targetIndex !== oldIndex) {
+          const [movedItem] = expenseDraft.items.splice(oldIndex, 1);
+          expenseDraft.items.splice(targetIndex, 0, movedItem);
+          showToast("排序已更新");
+        }
+
+        updateExpenseItemsDOM();
+      }
+
+      // 保證所有拖曳暫態旗標徹底清除，避免殘留
+      dragActive = false;
+      if (draggedItemElement) {
+        draggedItemElement.classList.remove("is-dragging");
+        draggedItemElement = null;
+      }
+      if (dragPlaceholder) {
+        if (dragPlaceholder.parentNode) {
+          dragPlaceholder.parentNode.removeChild(dragPlaceholder);
+        }
+        dragPlaceholder = null;
+      }
+    };
+
+    // 綁定指標移動與結束事件（於 window 全域監聽，保證移出容器或視窗失焦時皆能安全結束）
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", endDragOrPress);
+    window.addEventListener("pointercancel", endDragOrPress);
+    window.addEventListener("blur", () => {
+      if (isPointerDown || dragActive) {
+        endDragOrPress();
+      }
+    });
+  }
+
+  // =========================
+  // 8. 新增支出表單畫面
+  // =========================
+
+  function renderExpenseForm() {
+    // 修改日期：2026-11-20
+    // 新增支出表單：支援逐項記錄與直接輸入總額兩種模式
+
+    const isItemized = expenseDraft.mode === "itemized";
+    const totals = calculateItemsTotal();
+    const jpyVal = isItemized ? (totals.totalNet > 0 ? totals.totalNet : "") : "";
+
+    return (
+      pageHeader("NEW EXPENSE", "新增支出", "先記錄消費，再確認付款與分帳細節。") +
+      '<form id="expense-form" class="card form">' +
+      '<div class="expense-basic-info">' +
+
+      // 一、基本資料
+      '<h3>基本資料</h3>' +
+      '<div class="field"><label for="expense-title">支出名稱</label>' +
+      '<input id="expense-title" name="title" required maxlength="80" placeholder="例如：博多拉麵"></div>' +
+
+      '<div class="form-grid">' +
+      '<div class="field"><label>消費日期</label>' +
+      '<input name="date" type="date" value="' + today(state.trip.timezone) + '" required></div>' +
+
+      '<div class="field"><label>支出分類</label>' +
+      '<select name="category">' +
+      '<option value="餐飲">餐飲</option>' +
+      '<option value="交通">交通</option>' +
+      '<option value="住宿">住宿</option>' +
+      '<option value="購物">購物</option>' +
+      '<option value="門票">門票</option>' +
+      '<option value="其他">其他</option>' +
+      '</select></div></div>' +
+      '</div>' +
+
+      // 二、消費明細
+      '<h3>消費明細</h3>' +
+
+      '<div class="field">' +
+      '<label>記錄模式</label>' +
+      '<div class="expense-mode-toggle">' +
+      '<label class="choice ' + (!isItemized ? "active" : "") + '">' +
+      '<input type="radio" name="expense-mode" value="direct" ' + (!isItemized ? "checked" : "") + '> 直接輸入總額' +
+      '</label>' +
+      '<label class="choice ' + (isItemized ? "active" : "") + '">' +
+      '<input type="radio" name="expense-mode" value="itemized" ' + (isItemized ? "checked" : "") + '> 逐項記錄' +
+      '</label>' +
+      '</div></div>' +
+
+      '<div class="field">' +
+      '<label for="expense-jpy">日幣消費總額</label>' +
+      '<input id="expense-jpy" name="jpy" inputmode="decimal" required placeholder="例如 1500.5" value="' + jpyVal + '" ' + (isItemized ? 'readonly class="readonly-calc"' : "") + '>' +
+      '<small id="expense-jpy-hint" class="hint">' + (isItemized ? "逐項記錄模式：由下方品項折後金額自動加總。" : "最多一位小數。") + '</small></div>' +
+
+      '<div id="itemized-section" ' + (!isItemized ? "hidden" : "") + '>' +
+      '<div class="itemized-summary">' +
+      '<div class="itemized-summary-grid">' +
+      '<div><small>品項數</small><strong id="summary-items-count">' + totals.count + '</strong></div>' +
+      '<div><small>品項折後總計</small><strong id="summary-items-total">¥' + totals.totalNet.toLocaleString("zh-TW") + '</strong></div>' +
+      '</div>' +
+      '<div class="itemized-calc-hint"><small class="hint">長按卡片約 1.5 秒可拖曳排序；短按可展開／收合編輯。</small></div>' +
+      '</div>' +
+
+      '<div id="expense-items-list" class="expense-items-list">' +
+      renderExpenseItemsListHtml() +
+      '</div>' +
+
+      '<button type="button" class="btn secondary small" data-action="add-item" style="width: 100%; margin-top: 6px;">＋ 新增品項</button>' +
+      '</div>' +
+
+      // 三、付款資訊
+      '<h3>付款資訊</h3>' +
+      '<div class="field payment-method"><label>付款方式</label>' +
+      '<label class="choice"><input type="radio" name="method" value="現金" checked>現金</label>' +
+      '<label class="choice"><input type="radio" name="method" value="信用卡">信用卡</label></div>' +
+
+      '<div class="form-grid">' +
+      '<div class="field"><label>實際台幣金額</label>' +
+      '<input name="twd" type="number" min="0" step="1" placeholder="待補可留空"></div>' +
+
+      '<div class="field"><label>付款人</label>' +
+      '<select name="payer">' +
+      state.members.map((member) =>
+        '<option value="' + escapeHtml(member.name) + '">' +
+        escapeHtml(member.name) + '</option>'
+      ).join("") +
+      '</select></div></div>' +
+
+      // 四、折扣與回饋
+      '<h3>折扣與回饋</h3>' +
+      '<div id="credit-card-reward-fields" hidden>' +
+      '<div class="form-grid">' +
+      '<div class="field">' +
+      '<label>折扣金額</label>' +
+      '<input name="discount" type="number" min="0" step="0.1" value="0">' +
+      '<small class="hint">折扣明細及分配計算將於下一階段實作。</small></div>' +
+
+      '<div class="field">' +
+      '<label>信用卡回饋點數</label>' +
+      '<input name="reward" type="number" min="0" step="1" value="0">' +
+      '</div>' +
+      '</div>' +
+
+      '<div class="field">' +
+      '<label>回饋分配方式</label>' +
+      '<select name="rewardAllocation">' +
+      '<option value="proportional">依各旅伴實際消費比例分配</option>' +
+      '<option value="cardholder">全部歸刷卡人</option>' +
+      '</select></div>' +
+      '</div>' +
+
+      // 五、分攤方式
+      '<h3>分攤方式</h3>' +
+      '<div class="field">' +
+      '<select name="split">' +
+      '<option value="equal">平均分攤</option>' +
+      '<option value="exact">自訂金額</option>' +
+      '<option value="items" ' + (!isItemized ? "disabled" : "") + '>依品項分攤</option>' +
+      '</select>' +
+      '<small class="hint">分攤計算與品項明細互動將於下一階段實作。</small></div>' +
+
+      // 儲存
+      '<button class="btn" type="submit">儲存支出（本機示範）</button>' +
+      '</form>'
+    );
+  }
 
 
 
@@ -613,6 +1179,13 @@ function renderExpenseForm() {
       '<div class="row"><span>付款人</span><strong>' +
       escapeHtml(item.payer) + "</strong></div>" +
 
+      // 分攤方式。
+      (item.split
+        ? '<div class="row"><span>分攤方式</span><strong>' +
+          escapeHtml(item.split === "items" ? "依品項分攤" : item.split === "exact" ? "自訂金額" : "平均分攤") +
+          "</strong></div>"
+        : "") +
+
       // 顯示實際記帳時間，依旅行所在地時區呈現。
       // 修改日期：2026-11-11
       '<div class="row"><span>記帳時間</span><strong>' +
@@ -631,6 +1204,22 @@ function renderExpenseForm() {
       // 支出狀態。
       '<div class="row"><span>狀態</span><strong>' +
       escapeHtml(item.status) + "</strong></div></div>" +
+
+      // 顯示消費品項明細（若有逐項記錄資料）
+      (item.items && item.items.length > 0
+        ? '<div class="card"><h3>消費品項明細</h3>' +
+          item.items.map((it) =>
+            '<div class="row">' +
+            '<span><strong>' + escapeHtml(it.name) + '</strong><br>' +
+            '<small class="hint">' + it.quantity + (it.unit ? escapeHtml(it.unit) : "") + ' × ¥' + Number(it.unitPrice).toLocaleString("zh-TW") +
+            (it.discount > 0 ? '（折抵 ¥' + Number(it.discount).toLocaleString("zh-TW") + '）' : '') +
+            (it.note ? ' · ' + escapeHtml(it.note) : '') +
+            '</small></span>' +
+            '<strong>¥' + Number(it.net).toLocaleString("zh-TW") + '</strong>' +
+            '</div>'
+          ).join("") +
+          '</div>'
+        : '') +
 
       // 提供取消這筆示範支出的按鈕。
       '<div class="actions"><button class="btn danger" data-action="cancel-expense" data-id="' +
@@ -812,6 +1401,9 @@ function renderItinerary() {
       button.classList.toggle("active", button.dataset.page === state.page ||
         (state.page === "expense-detail" && button.dataset.page === "trip"));
     });
+
+    // 確保新增支出畫面渲染時拖曳事件被初始化
+    initItemDragAndDrop();
   }
 
 
@@ -820,6 +1412,11 @@ function renderItinerary() {
   // =========================
 
   function navigate(page) {
+
+    // 切換至新增支出時，重置品項草稿
+    if (page === "expense-new") {
+      resetExpenseDraft("direct");
+    }
 
     // 確認目標頁面存在，不存在時返回首頁。
     state.page = renderers[page] ? page : "home";
@@ -892,6 +1489,7 @@ function renderItinerary() {
 
   // 顯示對話視窗。
     $("#dialog").showModal();
+    initItemDragAndDrop();
   }
 
 
@@ -1098,6 +1696,7 @@ function renderItinerary() {
       // 新增支出：以全螢幕彈窗顯示原有記帳表單。
       // 修改日期：2026-11-14
       case "new-expense":
+        resetExpenseDraft("direct");
         showDialog(renderExpenseForm());
         break;
 
@@ -1170,6 +1769,70 @@ function renderItinerary() {
         else showToast("邀請碼：DEMO26");
 
         break;
+
+      // 新增品項（依 2026-11-20 規格：若有展開中卡片先驗證保存，並展開新品項）
+      case "add-item": {
+        if (expenseDraft.expandedItemId) {
+          const currentCard = document.querySelector(".expense-item-card.expanded");
+          if (currentCard && !saveItemFromCard(currentCard)) {
+            return;
+          }
+        }
+        const newItem = {
+          id: uid(),
+          name: "",
+          quantity: 1,
+          unit: "",
+          unitPrice: "",
+          discount: 0,
+          note: ""
+        };
+        expenseDraft.items.push(newItem);
+        expenseDraft.expandedItemId = newItem.id;
+        updateExpenseItemsDOM();
+        setTimeout(() => {
+          const newCard = document.querySelector(`.expense-item-card[data-item-id="${newItem.id}"]`);
+          if (newCard) {
+            newCard.scrollIntoView({ behavior: "smooth", block: "center" });
+            const nameInput = newCard.querySelector(".item-input-name");
+            if (nameInput) nameInput.focus();
+          }
+        }, 50);
+        break;
+      }
+
+      // 儲存單一品項卡片
+      case "save-item": {
+        const card = actionButton.closest(".expense-item-card");
+        if (card) {
+          saveItemFromCard(card);
+        }
+        break;
+      }
+
+      // 刪除單一品項
+      case "delete-item": {
+        const itemId = actionButton.dataset.id;
+        const itemIndex = expenseDraft.items.findIndex((it) => it.id === itemId);
+        if (itemIndex >= 0) {
+          expenseDraft.items.splice(itemIndex, 1);
+          if (expenseDraft.expandedItemId === itemId) {
+            expenseDraft.expandedItemId = null;
+          }
+
+          // 依 2026-11-19 規格：若刪除後已無任何有效品項，系統自動切換回「直接輸入總額」模式
+          if (expenseDraft.items.length === 0) {
+            setExpenseMode("direct");
+            const directRadio = document.querySelector('input[name="expense-mode"][value="direct"]');
+            if (directRadio) directRadio.checked = true;
+            showToast("已無有效品項，已自動切換回直接輸入總額模式");
+          } else {
+            updateExpenseItemsDOM();
+            showToast("品項已刪除");
+          }
+        }
+        break;
+      }
 
       // 取消支出。
       case "cancel-expense": {
@@ -1267,13 +1930,58 @@ function renderItinerary() {
       // 阻止表單使用瀏覽器預設方式重新載入頁面。
       event.preventDefault();
 
-      // 取得表單內所有欄位的資料。
+      // 先取得目前記錄模式
+      const modeInput = event.target.querySelector('input[name="expense-mode"]:checked');
+      const mode = modeInput ? modeInput.value : (expenseDraft.mode || "direct");
+
+      // 逐項記錄模式下的品項檢查：先驗證及保存展開中的品項，並同步總額
+      let itemTotals = null;
+      if (mode === "itemized") {
+        // 若有展開中的品項卡片，先嘗試驗證與儲存
+        if (expenseDraft.expandedItemId) {
+          const currentCard = document.querySelector(".expense-item-card.expanded");
+          if (currentCard && !saveItemFromCard(currentCard)) {
+            showToast("品項內容有誤，請先修正後儲存品項");
+            return;
+          }
+        }
+
+        // 依 2026-11-19 規格：逐項記錄模式至少須有一筆有效品項
+        if (expenseDraft.items.length === 0) {
+          showToast("逐項記錄模式至少需要一個有效品項");
+          return;
+        }
+
+        // 重新計算並確保品項折後總額與日幣輸入框完全同步
+        itemTotals = calculateItemsTotal();
+        const jpyInput = event.target.querySelector('input[name="jpy"]');
+        if (jpyInput) {
+          jpyInput.value = itemTotals.totalNet;
+        }
+      }
+
+      // 先完成品項驗證／保存與總額更新後，再建立 FormData，確保取得最新數值
       const form = new FormData(event.target);
 
-      // 取得日幣金額文字。
-      const jpyText = String(form.get("jpy") || "");
+      // 取得並驗證分攤方式
+      const split = String(form.get("split") || "equal");
+      if (!["equal", "exact", "items"].includes(split)) {
+        showToast("請選擇有效的分攤方式");
+        return;
+      }
 
-      
+      // 依 2026-11-19 規格：直接輸入總額模式不可使用「依品項分攤」
+      if (mode === "direct" && split === "items") {
+        showToast("直接輸入總額模式不可使用「依品項分攤」，請切換為逐項記錄或選擇其他分攤方式");
+        return;
+      }
+
+      // 取得日幣金額文字（逐項記錄模式確保與品項加總完全一致）
+      let jpyText = String(form.get("jpy") || "");
+      if (mode === "itemized" && itemTotals) {
+        jpyText = String(itemTotals.totalNet);
+      }
+
       // 取得台幣金額文字，並移除前後空白。
       const twdText = String(form.get("twd") || "").trim();
 
@@ -1373,16 +2081,37 @@ function renderItinerary() {
         // 儲存付款人。
         payer: form.get("payer"),
 
+        // 儲存分攤方式（平均分攤 equal、自訂金額 exact、依品項分攤 items）。
+        split: split,
+
         // 儲存信用卡回饋點數。
         reward: rewardValue,
 
         // 儲存信用卡回饋分配方式。
         rewardAllocation: rewardAllocation,
 
+        // 消費品項明細（逐項記錄時保存品項資料）
+        items: mode === "itemized"
+          ? expenseDraft.items.map((item) => ({
+              id: item.id,
+              name: item.name,
+              quantity: Number(item.quantity),
+              unit: item.unit || "",
+              unitPrice: Number(item.unitPrice),
+              discount: Number(item.discount || 0),
+              note: item.note || "",
+              gross: getItemCalculations(item).gross,
+              net: getItemCalculations(item).net
+            }))
+          : [],
+
         // 台幣尚未填寫時標記為待補；
         // 已填寫時標記為待後端確認。
         status: twdValue === null ? "待補" : "待後端確認"
       });
+
+      // 儲存成功後重置品項草稿
+      resetExpenseDraft("direct");
 
       // 顯示新增成功提示。
       showToast("已加入本機示範紀錄");
@@ -1481,6 +2210,45 @@ function renderItinerary() {
 
       // 重新產生畫面，套用新的主題。
       render();
+    }
+
+        // 確認變更的是付款方式。
+    if (event.target.name === "method") {
+      const rewardFields = document.getElementById("credit-card-reward-fields");
+
+      if (rewardFields) {
+        rewardFields.hidden = event.target.value !== "信用卡";
+      }
+    }
+
+    // 切換消費記錄模式（直接輸入總額 vs 逐項記錄）
+    if (event.target.name === "expense-mode") {
+      setExpenseMode(event.target.value);
+    }
+
+  });
+
+  // 監聽即時輸入事件（品項金額即時小計計算）
+  document.addEventListener("input", (event) => {
+    const card = event.target.closest(".expense-item-card.expanded");
+    if (card) {
+      const qtyInput = card.querySelector(".item-input-qty");
+      const priceInput = card.querySelector(".item-input-price");
+      const discInput = card.querySelector(".item-input-discount");
+
+      const qty = Number(qtyInput ? qtyInput.value : 0) || 0;
+      const price = Number(priceInput ? priceInput.value : 0) || 0;
+      const gross = round1(qty * price);
+      const disc = Number(discInput ? discInput.value : 0) || 0;
+      const net = Math.max(0, round1(gross - disc));
+
+      const grossEl = card.querySelector(".calc-gross");
+      const discEl = card.querySelector(".calc-discount");
+      const netEl = card.querySelector(".calc-net");
+
+      if (grossEl) grossEl.textContent = "¥" + gross.toLocaleString("zh-TW");
+      if (discEl) discEl.textContent = "-¥" + disc.toLocaleString("zh-TW");
+      if (netEl) netEl.textContent = "¥" + net.toLocaleString("zh-TW");
     }
   });
 
