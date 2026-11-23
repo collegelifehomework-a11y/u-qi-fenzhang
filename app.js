@@ -1,11 +1,9 @@
-/*
- * u 起旅遊分帳｜app.js｜v0.2
+/* u 起旅遊分帳｜app.js｜v0.2
  *
  * 此版本是前端介面與互動骨架，使用示範資料。
  * 正式 API 尚未接線。
  * 權限、金額算法及結算一律由 GAS 後端執行。
  */
-
 (() => {
   "use strict";
 
@@ -46,7 +44,6 @@
       maximumFractionDigits: 0
     }).format(Number(value) || 0);
 
- 
   // 取得旅行所在地的當地日期，格式為 YYYY-MM-DD。
   // 修改日期：2026-11-11
   const today = (timezone = state.trip.timezone || "Asia/Taipei") => {
@@ -486,21 +483,230 @@
   // 依 2026-11-19 / 2026-11-20 Notion 規格實作
   // ==========================================
 
-  const expenseDraft = {
-    mode: "direct", // "direct"（直接輸入總額）或 "itemized"（逐項記錄）
-    items: [],
-    expandedItemId: null
-  };
+const expenseDraft = {
+  mode: "direct",
+  items: [],
+  expandedItemId: null,
+  split: "equal"
+};
+
+const expenseFxState = {
+  requestId: 0,
+  isManual: false,
+  loading: false,
+  error: null,
+  rate: null,
+  lastDate: null
+};
 
   // 重置支出品項暫存
   function resetExpenseDraft(mode = "direct") {
     expenseDraft.mode = mode;
     expenseDraft.items = [];
     expenseDraft.expandedItemId = null;
+    expenseDraft.split = "equal";
+    // 重置匯率狀態
+    expenseFxState.requestId = 0;
+    expenseFxState.isManual = false;
+    expenseFxState.loading = false;
+    expenseFxState.error = null;
+    expenseFxState.rate = null;
+    expenseFxState.lastDate = null;
   }
 
   // 四捨五入至小數點後一位
   const round1 = (num) => Math.round((Number(num) + Number.EPSILON) * 10) / 10;
+
+  // =========================
+  // 現金付款匯率換算（依 2026-11-21 規格）
+  // =========================
+
+  // 取得指定日期的 JPY→TWD 匯率（來源：fawazahmed0 currency-api，jsdelivr CDN）
+  async function fetchFxRate(date) {
+    const urls = [
+      "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@" + date + "/v1/currencies/jpy.json",
+      "https://" + date + ".currency-api.pages.dev/v1/currencies/jpy.json"
+    ];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const rate = data && data.jpy && data.jpy.twd;
+        if (typeof rate === "number" && rate > 0) return rate;
+      } catch (e) {
+        // 嘗試下一個來源
+      }
+    }
+    throw new Error("無法取得 " + date + " 的 JPY/TWD 匯率");
+  }
+
+  // 依目前日幣金額與匯率重新計算台幣金額
+  function updateFxConversion() {
+    const form = document.getElementById("expense-form");
+    if (!form) return;
+    const methodInput = form.querySelector('input[name="method"]:checked');
+    if (!methodInput || methodInput.value !== "現金") return;
+
+    const rateInput = document.getElementById("fx-rate");
+    const twdInput = form.querySelector('input[name="twd"]');
+    const convertedEl = document.getElementById("fx-converted");
+    const errorEl = document.getElementById("fx-error");
+
+    const rate = rateInput ? Number(rateInput.value) : NaN;
+    let jpy = 0;
+    const modeInput = form.querySelector('input[name="expense-mode"]:checked');
+    const isItemized = modeInput && modeInput.value === "itemized";
+    if (isItemized) {
+      const totals = calculateItemsTotal();
+      jpy = totals.totalNet || 0;
+      const jpyInput = form.querySelector('input[name="jpy"]');
+      if (jpyInput) jpyInput.value = jpy > 0 ? jpy : (totals.count > 0 ? 0 : "");
+    } else {
+      const jpyInput = form.querySelector('input[name="jpy"]');
+      jpy = jpyInput ? (Number(jpyInput.value) || 0) : 0;
+    }
+    const discountInput = form.querySelector('input[name="discount"]');
+    const discount = discountInput ? (Number(discountInput.value) || 0) : 0;
+    const finalJpy = Math.max(0, round1(jpy - discount));
+
+    if (errorEl) {
+      if (expenseFxState.error) {
+        errorEl.textContent = expenseFxState.error;
+        errorEl.style.display = "";
+      } else {
+        errorEl.style.display = "none";
+      }
+    }
+
+    if (!Number.isFinite(rate) || rate <= 0) {
+      if (twdInput) twdInput.value = "";
+      if (convertedEl) convertedEl.value = "";
+      return;
+    }
+    const converted = Math.round(finalJpy * rate);
+    if (twdInput) twdInput.value = converted > 0 ? converted : (finalJpy > 0 ? converted : "");
+    if (convertedEl) convertedEl.value = converted > 0 ? converted : (finalJpy > 0 ? converted : "");
+  }
+
+  // 載入指定日期的系統匯率
+  async function loadFxRateForDate(date) {
+    if (!date) return;
+    const form = document.getElementById("expense-form");
+    if (!form) return;
+    const methodInput = form.querySelector('input[name="method"]:checked');
+    if (!methodInput || methodInput.value !== "現金") return;
+
+    const rateInput = document.getElementById("fx-rate");
+    const statusEl = document.getElementById("fx-rate-status");
+    const errorEl = document.getElementById("fx-error");
+
+    const reqId = ++expenseFxState.requestId;
+    expenseFxState.loading = true;
+    expenseFxState.error = null;
+    expenseFxState.lastDate = date;
+    if (statusEl) statusEl.textContent = "匯率載入中…";
+    if (rateInput) rateInput.placeholder = "載入中…";
+    if (errorEl) errorEl.style.display = "none";
+
+    try {
+      const rate = await fetchFxRate(date);
+      if (reqId !== expenseFxState.requestId) return; // 過期請求忽略
+      expenseFxState.rate = rate;
+      expenseFxState.loading = false;
+      expenseFxState.isManual = false;
+      if (rateInput) {
+        rateInput.value = rate;
+        rateInput.placeholder = "";
+      }
+      if (statusEl) statusEl.textContent = "系統匯率（JPY→TWD）";
+      updateFxConversion();
+    } catch (e) {
+      if (reqId !== expenseFxState.requestId) return;
+      expenseFxState.loading = false;
+      expenseFxState.error = "無法取得 " + date + " 的匯率，請手動輸入。";
+      if (statusEl) statusEl.textContent = "查詢失敗";
+      if (rateInput) rateInput.value = "";
+      if (errorEl) {
+        errorEl.textContent = expenseFxState.error;
+        errorEl.style.display = "";
+      }
+      updateFxConversion();
+    }
+  }
+
+  // 初始化表單匯率狀態（現金時載入匯率）
+  function initExpenseFormFx() {
+    const form = document.getElementById("expense-form");
+    if (!form || form.dataset.fxInitialized === "true") return;
+    form.dataset.fxInitialized = "true";
+
+    const methodInput = form.querySelector('input[name="method"]:checked');
+    const cashFx = document.getElementById("cash-fx-fields");
+    const twdInput = form.querySelector('input[name="twd"]');
+    const twdHint = document.getElementById("twd-hint");
+
+    if (methodInput && methodInput.value === "現金") {
+      if (cashFx) cashFx.hidden = false;
+      if (twdInput) {
+        twdInput.readOnly = true;
+        twdInput.classList.add("readonly-calc");
+      }
+      if (twdHint) twdHint.textContent = "由日幣金額 × 匯率自動換算";
+      const dateInput = form.querySelector('input[name="date"]');
+      if (dateInput && dateInput.value) loadFxRateForDate(dateInput.value);
+    } else {
+      if (cashFx) cashFx.hidden = true;
+      if (twdInput) {
+        twdInput.readOnly = false;
+        twdInput.classList.remove("readonly-calc");
+      }
+      if (twdHint) twdHint.textContent = "以帳單實際請款金額為準";
+    }
+
+    // 匯率手動修改
+    const rateInput = document.getElementById("fx-rate");
+    if (rateInput) {
+      rateInput.addEventListener("input", () => {
+        expenseFxState.isManual = true;
+        const statusEl = document.getElementById("fx-rate-status");
+        if (statusEl) statusEl.textContent = "手動覆寫";
+        updateFxConversion();
+      });
+    }
+
+    // 消費日期變更 → 重新取得匯率（僅現金）
+    const dateInput = form.querySelector('input[name="date"]');
+    if (dateInput) {
+      dateInput.addEventListener("change", () => {
+        const m = form.querySelector('input[name="method"]:checked');
+        if (m && m.value === "現金") {
+          expenseFxState.isManual = false;
+          loadFxRateForDate(dateInput.value);
+        }
+      });
+    }
+
+    // 日幣金額變更 → 重新換算
+    const jpyInput = form.querySelector('input[name="jpy"]');
+    if (jpyInput) {
+      jpyInput.addEventListener("input", () => {
+        const m = form.querySelector('input[name="method"]:checked');
+        if (m && m.value === "現金") updateFxConversion();
+      });
+    }
+
+    // 折扣變更 → 重新換算
+    const discountInput = form.querySelector('input[name="discount"]');
+    if (discountInput) {
+      discountInput.addEventListener("input", () => {
+        const m = form.querySelector('input[name="method"]:checked');
+        if (m && m.value === "現金") updateFxConversion();
+      });
+    }
+
+    // 信用卡回饋切換仍保留既有行為
+  }
 
   // 計算單一品項的原始小計、折扣與折後金額
   function getItemCalculations(item) {
@@ -541,7 +747,7 @@
       return (
         '<div class="expense-item-card collapsed" data-item-id="' + escapeHtml(item.id) + '" data-index="' + index + '">' +
           '<div class="item-card-collapsed-row">' +
-            '<span class="drag-handle" title="按住約 1.5 秒可拖曳排序" aria-label="拖曳手柄">⋮⋮</span>' +
+            '<span class="drag-handle" title="按住約 1 秒可拖曳排序" aria-label="拖曳手柄">⋮⋮</span>' +
             '<div class="item-summary-info">' +
               '<span class="item-summary-name">' + escapeHtml(item.name || "（未命名品項）") + '</span>' +
               '<span class="item-summary-net">¥' + calc.net.toLocaleString("zh-TW") + '</span>' +
@@ -552,12 +758,47 @@
       );
     }
 
-    // 展開狀態：完整編輯欄位，底部僅設「儲存」按鈕（依 2026-11-20 規格不設「取消」按鈕）
+    // 展開狀態：完整編輯欄位，底部僅設「儲存」按鈕（依 2026-11-20 / 2026-11-22 規格不設「取消」及「刪除」按鈕）
+    const allocInfo = getAllocationStatus(item);
+    const unitLabel = item.unit ? escapeHtml(item.unit) : "件";
+    const currentSplit = expenseDraft.split || "equal";
+    const isPersonalSplit = currentSplit === "personal";
+
+    const memberInputs = state.members.map((member) => {
+      const val = (item.allocations && item.allocations[member.id] != null && item.allocations[member.id] !== "")
+        ? String(item.allocations[member.id])
+        : "";
+      const avatarChar = escapeHtml(member.name ? member.name.slice(0, 1) : "?");
+
+      return (
+        '<div class="allocation-member-row">' +
+          '<div class="allocation-member-info">' +
+            '<div class="avatar-mini">' + avatarChar + '</div>' +
+            '<label class="allocation-member-name" for="allocation-' + escapeHtml(item.id) + '-' + escapeHtml(member.id) + '">' +
+              escapeHtml(member.name) +
+            '</label>' +
+          '</div>' +
+          '<div class="allocation-member-input-wrap">' +
+            '<input ' +
+              'id="allocation-' + escapeHtml(item.id) + '-' + escapeHtml(member.id) + '" ' +
+              'class="allocation-quantity-input" ' +
+              'type="text" ' +
+              'inputmode="decimal" ' +
+              'data-item-id="' + escapeHtml(item.id) + '" ' +
+              'data-member-id="' + escapeHtml(member.id) + '" ' +
+              'value="' + escapeHtml(val) + '" ' +
+              'placeholder="0" ' +
+              'autocomplete="off">' +
+            '<span class="allocation-unit">' + unitLabel + '</span>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join("");
+
     return (
       '<div class="expense-item-card expanded" data-item-id="' + escapeHtml(item.id) + '" data-index="' + index + '">' +
         '<div class="item-card-header">' +
           '<span class="item-card-title">品項 #' + (index + 1) + '</span>' +
-          '<button type="button" class="item-delete-btn-header" data-action="delete-item" data-id="' + escapeHtml(item.id) + '" title="刪除品項" aria-label="刪除品項">🗑️ 刪除</button>' +
         '</div>' +
 
         '<div class="item-form-body">' +
@@ -605,6 +846,23 @@
             '<span class="calc-net-total">折後：<b class="calc-net">¥' + calc.net.toLocaleString("zh-TW") + '</b></span>' +
           '</div>' +
 
+          '<div class="item-allocation-card-block"' + (isPersonalSplit ? ' style="display:none;"' : "") + '>' +
+            '<div class="item-allocation-card-header">' +
+              '<span class="item-allocation-card-title">旅伴分配數量</span>' +
+              '<span class="allocation-badge ' + allocInfo.status + '">' +
+                allocInfo.allocated + ' / ' + allocInfo.quantity + (allocInfo.status === "complete" ? " ✓" : "") +
+              '</span>' +
+            '</div>' +
+            '<div class="allocation-members-list">' + memberInputs + '</div>' +
+            '<div class="allocation-progress-bar-wrap">' +
+              '<div class="allocation-progress-bar ' + allocInfo.status + '" style="width:' + allocInfo.percent + '%;"></div>' +
+            '</div>' +
+            '<div class="allocation-footer-status">' +
+              '<span class="allocation-progress-text">已分配：' + allocInfo.allocated + ' / ' + allocInfo.quantity + ' ' + unitLabel + '</span>' +
+              '<span class="allocation-diff-text ' + allocInfo.status + '">' + escapeHtml(allocInfo.statusText) + '</span>' +
+            '</div>' +
+          '</div>' +
+
           '<div class="item-card-actions">' +
             '<button type="button" class="btn small" data-action="save-item" data-id="' + escapeHtml(item.id) + '">儲存</button>' +
           '</div>' +
@@ -621,6 +879,74 @@
     return expenseDraft.items.map((item, index) => renderItemCard(item, index)).join("");
   }
 
+  // 計算單一品項的分配狀態與統計
+  function getAllocationStatus(item) {
+    const quantity = round1(Number(item.quantity) || 0);
+    const allocations = item.allocations || {};
+    let allocated = 0;
+    state.members.forEach((m) => {
+      allocated = round1(allocated + (Number(allocations[m.id]) || 0));
+    });
+    const diff = round1(allocated - quantity);
+    let status = "complete";
+    let statusText = "✓ 分配完成";
+    if (diff < -0.0001) {
+      status = "incomplete";
+      statusText = "尚缺 " + round1(quantity - allocated);
+    } else if (diff > 0.0001) {
+      status = "over";
+      statusText = "⚠️ 超額 " + diff;
+    }
+    const percent = quantity > 0 ? Math.min(100, Math.max(0, (allocated / quantity) * 100)) : 0;
+    return {
+      quantity,
+      allocated,
+      diff,
+      status,
+      statusText,
+      percent
+    };
+  }
+
+  // 即時更新單一品項分配狀態（不重建 DOM，保持輸入游標與焦點）
+  function updateItemAllocationStatusInPlace(itemId) {
+    const item = expenseDraft.items.find((it) => it.id === itemId);
+    if (!item) return;
+
+    const itemEl = document.querySelector(`.expense-item-card[data-item-id="${itemId}"]`);
+    if (!itemEl) return;
+
+    const info = getAllocationStatus(item);
+    const unitLabel = item.unit ? item.unit : "件";
+
+    // 1. 更新卡片標題 Badge
+    const badge = itemEl.querySelector(".allocation-badge");
+    if (badge) {
+      badge.className = "allocation-badge " + info.status;
+      badge.textContent = `${info.allocated} / ${info.quantity}${info.status === "complete" ? " ✓" : ""}`;
+    }
+
+    // 2. 更新進度條
+    const progressBar = itemEl.querySelector(".allocation-progress-bar");
+    if (progressBar) {
+      progressBar.className = "allocation-progress-bar " + info.status;
+      progressBar.style.width = info.percent + "%";
+    }
+
+    // 3. 更新進度文字
+    const progressText = itemEl.querySelector(".allocation-progress-text");
+    if (progressText) {
+      progressText.textContent = `已分配：${info.allocated} / ${info.quantity} ${unitLabel}`;
+    }
+
+    // 4. 更新狀態提示文字
+    const diffText = itemEl.querySelector(".allocation-diff-text");
+    if (diffText) {
+      diffText.className = "allocation-diff-text " + info.status;
+      diffText.textContent = info.statusText;
+    }
+  }
+
   // 更新品項列表 DOM 與總額
   function updateExpenseItemsDOM() {
     const listEl = document.getElementById("expense-items-list");
@@ -629,6 +955,8 @@
     }
     updateExpenseTotalsUI();
     initItemDragAndDrop();
+    // 現金付款時，品項變更後重新換算台幣。
+    try { updateFxConversion(); } catch (e) {}
   }
 
   // 更新品項統計與日幣消費總額輸入框
@@ -651,8 +979,29 @@
   }
 
   // 切換消費記錄模式（直接輸入總額 vs 逐項記錄）
+  // 修改日期：2026-11-23
   function setExpenseMode(mode) {
+    // 依規格：切換記錄模式時不自動儲存品項。
+    // 尚未儲存的新品項直接丟棄；已儲存品項則還原上次儲存的資料。
+    if (expenseDraft.expandedItemId) {
+      const expandedId = expenseDraft.expandedItemId;
+      const expandedItem = expenseDraft.items.find((it) => it.id === expandedId);
+
+      if (expandedItem) {
+        if (!expandedItem.saved) {
+          // 從未儲存的新品項：整筆移除，連同輸入與分配資料。
+          expenseDraft.items = expenseDraft.items.filter((it) => it.id !== expandedId);
+        } else {
+          // 已儲存品項：丟棄未儲存的分配修改，還原上次儲存內容。
+          expandedItem.allocations = { ...(expandedItem.savedAllocations || {}) };
+        }
+      }
+
+      expenseDraft.expandedItemId = null;
+    }
+
     expenseDraft.mode = mode;
+
     const itemizedSection = document.getElementById("itemized-section");
     const jpyInput = document.querySelector('#expense-form input[name="jpy"]');
     const hintEl = document.getElementById("expense-jpy-hint");
@@ -673,10 +1022,6 @@
         jpyInput.classList.add("readonly-calc");
       }
       if (hintEl) hintEl.textContent = "逐項記錄模式：由下方品項折後金額自動加總。";
-      if (splitSelect) {
-        const itemSplitOpt = splitSelect.querySelector('option[value="items"]');
-        if (itemSplitOpt) itemSplitOpt.disabled = false;
-      }
       // 若尚未有品項，自動新增一筆並展開
       if (expenseDraft.items.length === 0) {
         const newItem = {
@@ -686,7 +1031,10 @@
           unit: "",
           unitPrice: "",
           discount: 0,
-          note: ""
+          note: "",
+          allocations: {},
+          saved: false,
+          savedAllocations: {}
         };
         expenseDraft.items.push(newItem);
         expenseDraft.expandedItemId = newItem.id;
@@ -700,15 +1048,18 @@
         jpyInput.classList.remove("readonly-calc");
       }
       if (hintEl) hintEl.textContent = "最多一位小數。";
-      if (splitSelect) {
-        const itemSplitOpt = splitSelect.querySelector('option[value="items"]');
-        if (itemSplitOpt) {
-          itemSplitOpt.disabled = true;
-          if (splitSelect.value === "items") {
-            splitSelect.value = "equal";
-          }
+      if (splitSelect && splitSelect.value === "items") {
+        splitSelect.value = "equal";
+        expenseDraft.split = "equal";
+        // 修改日期：2026-11-23
+        // 同步重設分攤方式提示，避免停留在「依品項分攤」說明。
+        const splitHint = document.getElementById("expense-split-hint");
+        if (splitHint) {
+          splitHint.textContent = "選擇分攤方式後，設定旅伴如何分配這筆支出。";
         }
       }
+      // 重新渲染，確保被丟棄的未儲存品項不會留在畫面上。
+      updateExpenseItemsDOM();
     }
   }
 
@@ -798,6 +1149,22 @@
     item.discount = discountVal === "" ? 0 : Number(discountVal);
     item.note = noteVal;
 
+    // 同步讀取卡片內旅伴分配輸入
+    const allocInputs = card.querySelectorAll(".allocation-quantity-input");
+    if (allocInputs.length > 0) {
+      if (!item.allocations) item.allocations = {};
+      allocInputs.forEach((inp) => {
+        const mId = inp.dataset.memberId;
+        const v = inp.value.trim();
+        item.allocations[mId] = v === "" ? 0 : round1(Number(v));
+      });
+    }
+
+    // 記錄已儲存狀態與分配快照，供切換記錄模式時還原。
+    // 修改日期：2026-11-23
+    item.saved = true;
+    item.savedAllocations = { ...(item.allocations || {}) };
+
     // 自動收合卡片
     expenseDraft.expandedItemId = null;
     updateExpenseItemsDOM();
@@ -806,7 +1173,7 @@
   }
 
   // ==========================================
-  // 品項長按 1.5 秒拖曳排序與展開收合管理
+  // 品項長按 1 秒拖曳排序與展開收合管理
   // ==========================================
 
   let dragTimer = null;
@@ -844,7 +1211,7 @@
 
       // 若卡片處於展開狀態，或有任何卡片展開：
       if (card.classList.contains("expanded") || expenseDraft.expandedItemId !== null) {
-        // 依 2026-11-20 規格：若卡片仍處於展開編輯狀態，長按 1.5 秒不啟動拖曳，提示「請先收合品項卡片」
+        // 依 2026-11-20 規格：若卡片仍處於展開編輯狀態，長按 1 秒不啟動拖曳，提示「請先收合品項卡片」
         dragTimer = setTimeout(() => {
           showToast("請先收合品項卡片");
           dragTimer = null;
@@ -852,7 +1219,7 @@
         return;
       }
 
-      // 收合狀態的卡片：長按 1.5 秒進入拖曳排序模式
+      // 收合狀態的卡片：長按 1 秒進入拖曳排序模式
       dragTimer = setTimeout(() => {
         dragActive = true;
         draggedItemElement = card;
@@ -963,7 +1330,7 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       activePointerId = null;
       activeCaptureTarget = null;
 
-      // 短按放開（未滿 1.5 秒且非滾動移動）
+      // 短按放開（未滿 1 秒且非滾動移動）
       if (dragTimer) {
         clearTimeout(dragTimer);
         dragTimer = null;
@@ -1085,7 +1452,24 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       '</select></div></div>' +
       '</div>' +
 
-      // 二、消費明細
+      // 二、分攤方式
+      '<h3>分攤方式</h3>' +
+      '<div class="field">' +
+      '<select name="split">' +
+      '<option value="personal"' + ((expenseDraft.split || "equal") === "personal" ? " selected" : "") + '>個人費用</option>' +
+      '<option value="equal"' + ((expenseDraft.split || "equal") === "equal" ? " selected" : "") + '>平均分攤</option>' +
+      '<option value="exact"' + ((expenseDraft.split || "equal") === "exact" ? " selected" : "") + '>自訂金額</option>' +
+      '<option value="items"' + ((expenseDraft.split || "equal") === "items" ? " selected" : "") + '>依品項分攤</option>' +
+      '</select>' +
+      '<small id="expense-split-hint" class="hint">' +
+      (expenseDraft.split === "personal"
+        ? "個人費用由付款人本人負擔，不分攤給其他旅伴。"
+        : expenseDraft.split === "items"
+        ? "依各品項設定旅伴分配數量。"
+        : "選擇分攤方式後，設定旅伴如何分配這筆支出。") +
+      '</small></div>' +
+
+      // 三、消費明細
       '<h3>消費明細</h3>' +
 
       '<div class="field">' +
@@ -1110,7 +1494,7 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       '<div><small>品項數</small><strong id="summary-items-count">' + totals.count + '</strong></div>' +
       '<div><small>品項折後總計</small><strong id="summary-items-total">¥' + totals.totalNet.toLocaleString("zh-TW") + '</strong></div>' +
       '</div>' +
-      '<div class="itemized-calc-hint"><small class="hint">長按卡片約 1.5 秒可拖曳排序；短按可展開／收合編輯。</small></div>' +
+      '<div class="itemized-calc-hint"><small class="hint">長按卡片約 1 秒可拖曳排序；短按可展開／收合編輯。</small></div>' +
       '</div>' +
 
       '<div id="expense-items-list" class="expense-items-list">' +
@@ -1120,15 +1504,31 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       '<button type="button" class="btn secondary small" data-action="add-item" style="width: 100%; margin-top: 6px;">＋ 新增品項</button>' +
       '</div>' +
 
-      // 三、付款資訊
+      // 四、付款資訊
       '<h3>付款資訊</h3>' +
       '<div class="field payment-method"><label>付款方式</label>' +
       '<label class="choice"><input type="radio" name="method" value="現金" checked>現金</label>' +
       '<label class="choice"><input type="radio" name="method" value="信用卡">信用卡</label></div>' +
 
+      // 現金付款：依消費日期取得匯率並自動換算台幣（依 2026-11-21 規格）
+      '<div id="cash-fx-fields">' +
+      '<div class="form-grid">' +
+      '<div class="field">' +
+      '<label>匯率 (JPY→TWD) <span class="optional-hint">(可手動修改)</span></label>' +
+      '<input id="fx-rate" name="fxRate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="載入中…">' +
+      '<small id="fx-rate-status" class="hint">系統匯率</small></div>' +
+      '<div class="field">' +
+      '<label>換算台幣金額</label>' +
+      '<input id="fx-converted" type="text" readonly class="readonly-calc" placeholder="—">' +
+      '<small class="hint">由日幣金額 × 匯率自動計算</small></div>' +
+      '</div>' +
+      '<small id="fx-error" class="hint" style="color:var(--danger); display:none;"></small>' +
+      '</div>' +
+
       '<div class="form-grid">' +
       '<div class="field"><label>實際台幣金額</label>' +
-      '<input name="twd" type="number" min="0" step="1" placeholder="待補可留空"></div>' +
+      '<input id="expense-twd" name="twd" type="number" min="0" step="1" placeholder="待補可留空">' +
+      '<small id="twd-hint" class="hint">由匯率自動換算</small></div>' +
 
       '<div class="field"><label>付款人</label>' +
       '<select name="payer">' +
@@ -1138,7 +1538,7 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       ).join("") +
       '</select></div></div>' +
 
-      // 四、折扣與回饋
+      // 五、折扣與回饋
       '<h3>折扣與回饋</h3>' +
       '<div id="credit-card-reward-fields" hidden>' +
       '<div class="form-grid">' +
@@ -1160,16 +1560,6 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       '<option value="cardholder">全部歸刷卡人</option>' +
       '</select></div>' +
       '</div>' +
-
-      // 五、分攤方式
-      '<h3>分攤方式</h3>' +
-      '<div class="field">' +
-      '<select name="split">' +
-      '<option value="equal">平均分攤</option>' +
-      '<option value="exact">自訂金額</option>' +
-      '<option value="items" ' + (!isItemized ? "disabled" : "") + '>依品項分攤</option>' +
-      '</select>' +
-      '<small class="hint">分攤計算與品項明細互動將於下一階段實作。</small></div>' +
 
       // 儲存
       '<button class="btn" type="submit">儲存支出（本機示範）</button>' +
@@ -1219,7 +1609,7 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       // 分攤方式。
       (item.split
         ? '<div class="row"><span>分攤方式</span><strong>' +
-          escapeHtml(item.split === "items" ? "依品項分攤" : item.split === "exact" ? "自訂金額" : "平均分攤") +
+          escapeHtml(item.split === "items" ? "依品項分攤" : item.split === "exact" ? "自訂金額" : item.split === "personal" ? "個人費用" : "平均分攤") +
           "</strong></div>"
         : "") +
 
@@ -1245,16 +1635,30 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       // 顯示消費品項明細（若有逐項記錄資料）
       (item.items && item.items.length > 0
         ? '<div class="card"><h3>消費品項明細</h3>' +
-          item.items.map((it) =>
-            '<div class="row">' +
-            '<span><strong>' + escapeHtml(it.name) + '</strong><br>' +
-            '<small class="hint">' + it.quantity + (it.unit ? escapeHtml(it.unit) : "") + ' × ¥' + Number(it.unitPrice).toLocaleString("zh-TW") +
-            (it.discount > 0 ? '（折抵 ¥' + Number(it.discount).toLocaleString("zh-TW") + '）' : '') +
-            (it.note ? ' · ' + escapeHtml(it.note) : '') +
-            '</small></span>' +
-            '<strong>¥' + Number(it.net).toLocaleString("zh-TW") + '</strong>' +
-            '</div>'
-          ).join("") +
+          item.items.map((it) => {
+            let allocInfo = "";
+            if (item.split === "items" && it.allocations && Object.keys(it.allocations).length > 0) {
+              const allocatedList = state.members
+                .filter((m) => Number(it.allocations[m.id]) > 0)
+                .map((m) => `${escapeHtml(m.name)}: ${it.allocations[m.id]} ${escapeHtml(it.unit || "件")}`)
+                .join("、");
+              if (allocatedList) {
+                allocInfo = '<div class="allocation-detail-list">分配：' + allocatedList + '</div>';
+              }
+            }
+            return (
+              '<div class="row">' +
+              '<span><strong>' + escapeHtml(it.name) + '</strong><br>' +
+              '<small class="hint">' + it.quantity + (it.unit ? escapeHtml(it.unit) : "") + ' × ¥' + Number(it.unitPrice).toLocaleString("zh-TW") +
+              (it.discount > 0 ? '（折抵 ¥' + Number(it.discount).toLocaleString("zh-TW") + '）' : '') +
+              (it.note ? ' · ' + escapeHtml(it.note) : '') +
+              '</small>' +
+              allocInfo +
+              '</span>' +
+              '<strong>¥' + Number(it.net).toLocaleString("zh-TW") + '</strong>' +
+              '</div>'
+            );
+          }).join("") +
           '</div>'
         : '') +
 
@@ -1334,7 +1738,6 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       ).join("") + "</div><div class=\"actions\"><button class=\"btn\" data-action=\"invite\">產生示範邀請碼</button></div>";
   }
 
-
   // =========================
   // 13. 旅行設定畫面
   // =========================
@@ -1363,9 +1766,6 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       '<p>正式版資料將由 GAS 驗證 Token、角色權限與資料版本後存入 Google Sheets。</p></div>';
   }
 
-  // ========================
-  // // 行程頁面
-  // // =========================
 // =========================
 // 每日行程頁面
 // 修改日期：2026-11-14
@@ -1461,6 +1861,11 @@ function renderItinerary() {
     // 重新產生頁面內容。
     render();
 
+    // 新增支出頁：初始化現金匯率換算。
+    if (state.page === "expense-new") {
+      setTimeout(() => initExpenseFormFx(), 0);
+    }
+
     // 切換頁面後，平滑捲動至網頁頂端。
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1529,7 +1934,6 @@ function renderItinerary() {
     initItemDragAndDrop();
   }
 
-
   // =========================
   // 19. 呼叫 GAS 後端 API
   // =========================
@@ -1562,7 +1966,6 @@ function renderItinerary() {
     // 回傳後端提供的資料。
     return result.data;
   }
-
 
   // =========================
   // 20. 手動同步功能
@@ -1735,6 +2138,7 @@ function renderItinerary() {
       case "new-expense":
         resetExpenseDraft("direct");
         showDialog(renderExpenseForm());
+        setTimeout(() => initExpenseFormFx(), 0);
         break;
 
       // 關閉彈出視窗。
@@ -1822,7 +2226,10 @@ function renderItinerary() {
           unit: "",
           unitPrice: "",
           discount: 0,
-          note: ""
+          note: "",
+          allocations: {},
+          saved: false,
+          savedAllocations: {}
         };
         expenseDraft.items.push(newItem);
         expenseDraft.expandedItemId = newItem.id;
@@ -2002,7 +2409,7 @@ function renderItinerary() {
 
       // 取得並驗證分攤方式
       const split = String(form.get("split") || "equal");
-      if (!["equal", "exact", "items"].includes(split)) {
+      if (!["equal", "exact", "items", "personal"].includes(split)) {
         showToast("請選擇有效的分攤方式");
         return;
       }
@@ -2011,6 +2418,56 @@ function renderItinerary() {
       if (mode === "direct" && split === "items") {
         showToast("直接輸入總額模式不可使用「依品項分攤」，請切換為逐項記錄或選擇其他分攤方式");
         return;
+      }
+
+      // 若選擇「依品項分攤」，驗證各品項之旅伴分配進度與數量
+      if (split === "items") {
+        for (let i = 0; i < expenseDraft.items.length; i++) {
+          const it = expenseDraft.items[i];
+          const qty = Number(it.quantity) || 0;
+          const allocations = it.allocations || {};
+          let allocated = 0;
+
+          // 驗證單一旅伴分配數量規則
+          for (const member of state.members) {
+            const mVal = Number(allocations[member.id]) || 0;
+            if (mVal < 0) {
+              showToast(`品項「${it.name || "未命名品項"}」分配數量不可小於 0`);
+              expenseDraft.expandedItemId = it.id;
+              updateExpenseItemsDOM();
+              const targetEl = document.querySelector(`.expense-item-card[data-item-id="${it.id}"]`);
+              if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+            if (mVal > qty) {
+              showToast(`品項「${it.name || "未命名品項"}」中 ${member.name} 的分配數量不可超過購買數量（${qty}）`);
+              expenseDraft.expandedItemId = it.id;
+              updateExpenseItemsDOM();
+              const targetEl = document.querySelector(`.expense-item-card[data-item-id="${it.id}"]`);
+              if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+            allocated = round1(allocated + mVal);
+          }
+
+          const diff = round1(allocated - qty);
+          if (diff < -0.0001) {
+            showToast(`品項「${it.name || "未命名品項"}」分配未完成（尚缺 ${round1(qty - allocated)}）`);
+            expenseDraft.expandedItemId = it.id;
+            updateExpenseItemsDOM();
+            const targetEl = document.querySelector(`.expense-item-card[data-item-id="${it.id}"]`);
+            if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+          if (diff > 0.0001) {
+            showToast(`品項「${it.name || "未命名品項"}」分配超額（超額 ${diff}）`);
+            expenseDraft.expandedItemId = it.id;
+            updateExpenseItemsDOM();
+            const targetEl = document.querySelector(`.expense-item-card[data-item-id="${it.id}"]`);
+            if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+        }
       }
 
       // 取得日幣金額文字（逐項記錄模式確保與品項加總完全一致）
@@ -2112,13 +2569,18 @@ function renderItinerary() {
         // 儲存台幣金額；可能為 null。
         twd: twdValue,
 
+        // 現金付款時記錄使用的匯率與是否手動覆寫（依 2026-11-21 規格）。
+        fxRate: form.get("method") === "現金" ? (Number(form.get("fxRate")) || null) : null,
+        fxRateManual: form.get("method") === "現金" ? expenseFxState.isManual : false,
+
         // 儲存付款方式。
         method: form.get("method"),
 
         // 儲存付款人。
         payer: form.get("payer"),
 
-        // 儲存分攤方式（平均分攤 equal、自訂金額 exact、依品項分攤 items）。
+        // 儲存分攤方式（平均分攤 equal、自訂金額 exact、依品項分攤 items、個人費用 personal）。
+        // 修改日期：2026-11-23
         split: split,
 
         // 儲存信用卡回饋點數。
@@ -2137,6 +2599,7 @@ function renderItinerary() {
               unitPrice: Number(item.unitPrice),
               discount: Number(item.discount || 0),
               note: item.note || "",
+              allocations: { ...(item.allocations || {}) },
               gross: getItemCalculations(item).gross,
               net: getItemCalculations(item).net
             }))
@@ -2256,6 +2719,32 @@ function renderItinerary() {
       if (rewardFields) {
         rewardFields.hidden = event.target.value !== "信用卡";
       }
+
+      // 現金/信用卡切換時，控制匯率換算欄位與台幣金額可編輯性。
+      // 修改日期：2026-11-24
+      const cashFx = document.getElementById("cash-fx-fields");
+      const twdInput = document.querySelector('#expense-form input[name="twd"]');
+      const twdHint = document.getElementById("twd-hint");
+      if (event.target.value === "現金") {
+        if (cashFx) cashFx.hidden = false;
+        if (twdInput) {
+          twdInput.readOnly = true;
+          twdInput.classList.add("readonly-calc");
+        }
+        if (twdHint) twdHint.textContent = "由匯率自動換算";
+        const dateInput = document.querySelector('#expense-form input[name="date"]');
+        if (dateInput && dateInput.value) {
+          expenseFxState.isManual = false;
+          loadFxRateForDate(dateInput.value);
+        }
+      } else {
+        if (cashFx) cashFx.hidden = true;
+        if (twdInput) {
+          twdInput.readOnly = false;
+          twdInput.classList.remove("readonly-calc");
+        }
+        if (twdHint) twdHint.textContent = "以帳單實際請款金額為準";
+      }
     }
 
     // 切換消費記錄模式（直接輸入總額 vs 逐項記錄）
@@ -2263,10 +2752,96 @@ function renderItinerary() {
       setExpenseMode(event.target.value);
     }
 
+    // 切換分攤方式
+    // 修改日期：2026-11-23
+    if (event.target.name === "split") {
+      const split = event.target.value;
+      expenseDraft.split = split;
+
+      // 更新分攤方式提示文字
+      const splitHint = document.getElementById("expense-split-hint");
+      if (splitHint) {
+        splitHint.textContent =
+          split === "personal"
+            ? "個人費用由付款人本人負擔，不分攤給其他旅伴。"
+            : split === "items"
+            ? "依各品項設定旅伴分配數量。"
+            : "選擇分攤方式後，設定旅伴如何分配這筆支出。";
+      }
+
+      // 直接輸入總額模式選擇「依品項分攤」時，自動切換為逐項記錄，
+      // 讓選項保持可用且不使用 disabled 反白樣式。
+      if (split === "items" && expenseDraft.mode !== "itemized") {
+        const itemizedRadio = document.querySelector('input[name="expense-mode"][value="itemized"]');
+        if (itemizedRadio) itemizedRadio.checked = true;
+        setExpenseMode("itemized");
+      }
+
+      // 個人費用不分攤給其他旅伴：直接隱藏卡片內的分配區塊。
+      // 不重建 DOM，避免尚未儲存的品項輸入內容遺失。
+      document.querySelectorAll(".item-allocation-card-block").forEach((block) => {
+        block.style.display = split === "personal" ? "none" : "";
+      });
+    }
+
+    // 分配數量變更完成（失焦或按 Enter，進行格式整理與上限校驗）
+    if (event.target.classList.contains("allocation-quantity-input")) {
+      const itemId = event.target.dataset.itemId;
+      const memberId = event.target.dataset.memberId;
+      const item = expenseDraft.items.find((it) => it.id === itemId);
+      if (!item) return;
+
+      const qty = Number(item.quantity) || 0;
+      let val = Number(event.target.value) || 0;
+
+      if (val < 0) {
+        val = 0;
+        event.target.value = "0";
+        showToast("分配數量不可小於 0");
+      } else if (val > qty) {
+        val = qty;
+        event.target.value = String(qty);
+        showToast(`分配數量不得超過品項購買數量（${qty}）`);
+      } else {
+        event.target.value = val === 0 && event.target.value.trim() === "" ? "" : String(round1(val));
+      }
+
+      if (!item.allocations) item.allocations = {};
+      item.allocations[memberId] = round1(val);
+      updateItemAllocationStatusInPlace(itemId);
+    }
   });
 
   // 監聽即時輸入事件（品項金額即時小計計算）
   document.addEventListener("input", (event) => {
+    // 更新品項分配數量（即時響應，不重新渲染 DOM 以免焦點遺失及光標跳動）
+    if (event.target.classList.contains("allocation-quantity-input")) {
+      const itemId = event.target.dataset.itemId;
+      const memberId = event.target.dataset.memberId;
+      const item = expenseDraft.items.find((it) => it.id === itemId);
+      if (!item) return;
+
+      let val = event.target.value;
+
+      // 移除非數字與非小數點字符
+      val = val.replace(/[^\d.]/g, "");
+      const dotIndex = val.indexOf(".");
+      if (dotIndex !== -1) {
+        // 最多保留一位小數
+        val = val.slice(0, dotIndex + 1) + val.slice(dotIndex + 1).replace(/\./g, "").slice(0, 1);
+      }
+      if (val !== event.target.value) {
+        event.target.value = val;
+      }
+
+      if (!item.allocations) item.allocations = {};
+
+      const numVal = val === "" || val === "." ? 0 : Number(val);
+      item.allocations[memberId] = numVal;
+
+      updateItemAllocationStatusInPlace(itemId);
+      return;
+    }
     const card = event.target.closest(".expense-item-card.expanded");
     if (card) {
       const qtyInput = card.querySelector(".item-input-qty");
