@@ -2107,18 +2107,6 @@ function renderItinerary() {
       "</div>";
   }
 
-  // 捲動日期列讓選取日期可見（僅在不可見時調整，避免無故飄移）。
-  setTimeout(() => {
-    const bar = document.querySelector(".itinerary-date-bar");
-    const active = bar && bar.querySelector(".itinerary-date-tab.active");
-    if (!bar || !active) return;
-    const barRect = bar.getBoundingClientRect();
-    const tabRect = active.getBoundingClientRect();
-    if (tabRect.left >= barRect.left && tabRect.right <= barRect.right) return;
-    const targetLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
-    bar.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
-  }, 0);
-
   return pageHeader(
     "TRAVEL ITINERARY",
     "每日行程",
@@ -2155,12 +2143,38 @@ function renderItinerary() {
 
   function render() {
 
+    // 行程頁：渲染前保存日期列水平捲動位置。
+    const isItin = state.page === "itinerary";
+    let savedDateBarScroll = 0;
+    if (isItin) {
+      const _bar = document.querySelector(".itinerary-date-bar");
+      if (_bar) savedDateBarScroll = _bar.scrollLeft;
+    }
+
     // 將目前選擇的主題套用到整個網頁。
     document.documentElement.dataset.theme = state.theme;
 
     // 執行目前頁面對應的函式，並將產生的 HTML 放進 #view。
     // 如果頁面名稱不存在，就改為顯示首頁。
     $("#view").innerHTML = (renderers[state.page] || renderHome)();
+
+    // 行程頁：還原日期列捲動位置，僅在選取日期不可見時調整。
+    if (isItin) {
+      const _bar = document.querySelector(".itinerary-date-bar");
+      if (_bar) {
+        _bar.scrollLeft = savedDateBarScroll;
+        const _active = _bar.querySelector(".itinerary-date-tab.active");
+        if (_active) {
+          const _barRect = _bar.getBoundingClientRect();
+          const _tabRect = _active.getBoundingClientRect();
+          if (_tabRect.left < _barRect.left || _tabRect.right > _barRect.right) {
+            const _targetLeft = _active.offsetLeft - (_bar.clientWidth - _active.offsetWidth) / 2;
+            _bar.scrollTo({ left: Math.max(0, _targetLeft), behavior: "smooth" });
+          }
+        }
+      }
+    }
+
     $(".bottom-nav").hidden = state.page === "home";
     // 更新底部導覽列的選取狀態。
     document.querySelectorAll(".nav-item").forEach((button) => {
