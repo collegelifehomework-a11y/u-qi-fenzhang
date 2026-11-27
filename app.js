@@ -63,6 +63,29 @@
   return `${date.year}-${date.month}-${date.day}`;
 };
 
+  // 日期加減工具（UTC 日期算術，避免時區偏移）。
+  // 修改日期：2026-11-26
+  const addDays = (dateStr, n) => {
+    const d = new Date(dateStr + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  // 取得指定日期的中文星期（短）。
+  // 修改日期：2026-11-26
+  const weekdayZh = (dateStr) => {
+    try {
+      return new Intl.DateTimeFormat("zh-TW", { weekday: "short", timeZone: "UTC" }).format(
+        new Date(dateStr + "T00:00:00Z")
+      );
+    } catch (e) {
+      return "";
+    }
+  };
+
   // 依照旅程所在地日期，自動判斷旅程目前的狀態。
   // 修改日期：2026-11-11
   const getTripStatus = (trip) => {
@@ -101,7 +124,8 @@
       id: "demo-trip",
       name: "福岡自由行",
       start: "2026-10-04",
-      end: "2026-10-09"
+      end: "2026-10-09",
+      timezone: "Asia/Taipei"
     },
 
     // 旅行清單，目前只有一筆示範資料。
@@ -109,20 +133,32 @@
       {
         id: "demo-trip",
         name: "福岡自由行",
-        dates: "2026/10/04 – 10/09",
+        dates: "2026-10-04 – 2026-10-09",
+        start: "2026-10-04",
+        end: "2026-10-09",
         status: "進行中",
         memberCount: 1,
         totalJPY: 0,
-        totalTWD: 0
+        totalTWD: 0,
+        timezone: "Asia/Taipei"
       }
     ],
 
-    // 旅伴清單。
-    members: [
-      { id: "m1", name: "我", role: "主要管理者" },
-      { id: "m2", name: "小安", role: "旅伴" },
-      { id: "m3", name: "阿哲", role: "旅伴" }
-    ],
+    // 行程資料依旅程保存，避免不同旅程共用。
+    // 修改日期：2026-11-26
+    itineraryByTrip: {
+      "demo-trip": {}
+    },
+
+    // 旅伴清單改為依旅程保存，避免不同旅程共用同一份成員資料。
+    // 修改日期：2026-11-24
+    membersByTrip: {
+      "demo-trip": [
+        { id: "m1", name: "我", role: "主要管理者" },
+        { id: "m2", name: "小安", role: "旅伴" },
+        { id: "m3", name: "阿哲", role: "旅伴" }
+      ]
+    },
 
     // 支出清單。
     // jpy 是日幣金額，twd 是台幣金額。
@@ -139,6 +175,11 @@
         method: "現金",
         payer: "我",
         split: "equal",
+        members: [
+          { id: "m1", name: "我" },
+          { id: "m2", name: "小安" },
+          { id: "m3", name: "阿哲" }
+        ],
         status: "已確認"
       },
       {
@@ -152,6 +193,11 @@
         method: "信用卡",
         payer: "小安",
         split: "equal",
+        members: [
+          { id: "m1", name: "我" },
+          { id: "m2", name: "小安" },
+          { id: "m3", name: "阿哲" }
+        ],
         status: "已確認"
       },
       {
@@ -165,6 +211,11 @@
         method: "現金",
         payer: "阿哲",
         split: "equal",
+        members: [
+          { id: "m1", name: "我" },
+          { id: "m2", name: "小安" },
+          { id: "m3", name: "阿哲" }
+        ],
         status: "待補"
       }
     ],
@@ -180,10 +231,51 @@
 
     // 目前選取的支出編號。
     // null 代表尚未選取任何支出。
-    selectedExpenseId: null
+    selectedExpenseId: null,
+
+    // 行程資料依旅程保存，避免不同旅程共用。
+    // 修改日期：2026-11-26
+    itineraryByTrip: {
+      "demo-trip": {}
+    },
+
+    // 目前選取的行程日期（YYYY-MM-DD）。
+    // null 代表尚未選取，進入行程頁時預設為第一天。
+    // 修改日期：2026-11-28
+    selectedItineraryDate: null,
   };
 
-    // =========================
+  // 旅伴資料依旅程隔離：state.members 作為目前旅程的成員清單代理。
+  // 修改日期：2026-11-24
+  Object.defineProperty(state, "members", {
+    get() {
+      if (!state.membersByTrip[state.trip.id]) {
+        state.membersByTrip[state.trip.id] = [];
+      }
+      // 已移除（軟刪除）的旅伴不顯示於目前成員清單。
+      // 修改日期：2026-11-24
+      return state.membersByTrip[state.trip.id].filter((m) => !m.removed);
+    },
+    set(value) {
+      state.membersByTrip[state.trip.id] = value;
+    }
+  });
+
+  // 行程資料依旅程隔離：state.itinerary 作為目前旅程的行程代理。
+  // 修改日期：2026-11-26
+  Object.defineProperty(state, "itinerary", {
+    get() {
+      if (!state.itineraryByTrip[state.trip.id]) {
+        state.itineraryByTrip[state.trip.id] = {};
+      }
+      return state.itineraryByTrip[state.trip.id];
+    },
+    set(value) {
+      state.itineraryByTrip[state.trip.id] = value;
+    }
+  });
+
+  // =========================
   // 3. 支出資料與統計工具
   // =========================
   
@@ -295,19 +387,28 @@
       state.trips.length + " 趟旅程</span></div>" +
 
       // 將旅行清單轉換成可點擊的旅行卡片。
-      state.trips.map((trip) =>
-      '<button class="trip-card" data-action="select-trip" data-id="' + 
-      escapeHtml(trip.id) + '">' +
-      '<span class="trip-info">' +
-      '<strong>' + escapeHtml(trip.name) + '</strong>' +
-      '<small>' + trip.dates + ' · ' + getTripStatus(trip) + '</small>' +
-      '<small>旅伴：' + trip.memberCount + ' 人</small>' +
-      '<small>總花費：¥' +
-      Number(trip.totalJPY).toLocaleString() +
-      ' · NT$' +
-      Number(trip.totalTWD).toLocaleString() +
-      '</small>' +'</span>›' +'</button>'
-    ).join("");
+      state.trips.map((trip) => {
+        // 依該旅程的支出即時計算總金額，避免使用過時的靜態值。
+        // 修改日期：2026-11-25
+        const tripExpenses = state.expenses.filter(
+          (e) => e.tripId === trip.id && e.status !== "已取消"
+        );
+        const tripJpy = tripExpenses.reduce((s, e) => s + (Number(e.jpy) || 0), 0);
+        const tripTwd = tripExpenses.reduce((s, e) => s + (Number(e.twd) || 0), 0);
+        return (
+        '<button class="trip-card" data-action="select-trip" data-id="' +
+        escapeHtml(trip.id) + '">' +
+        '<span class="trip-info">' +
+        '<strong>' + escapeHtml(trip.name) + '</strong>' +
+        '<small>' + trip.dates + ' · ' + getTripStatus(trip) + '</small>' +
+        '<small>旅伴：' + trip.memberCount + ' 人</small>' +
+        '<small>總花費：¥' +
+        Number(tripJpy).toLocaleString() +
+        ' · NT$' +
+        Number(tripTwd).toLocaleString() +
+        '</small>' +'</span>›' +'</button>'
+        );
+      }).join("");
 
   }
 
@@ -487,7 +588,8 @@ const expenseDraft = {
   mode: "direct",
   items: [],
   expandedItemId: null,
-  split: "equal"
+  split: "equal",
+  loadedExpenseId: null
 };
 
 const expenseFxState = {
@@ -505,6 +607,7 @@ const expenseFxState = {
     expenseDraft.items = [];
     expenseDraft.expandedItemId = null;
     expenseDraft.split = "equal";
+    expenseDraft.loadedExpenseId = null;
     // 重置匯率狀態
     expenseFxState.requestId = 0;
     expenseFxState.isManual = false;
@@ -512,6 +615,37 @@ const expenseFxState = {
     expenseFxState.error = null;
     expenseFxState.rate = null;
     expenseFxState.lastDate = null;
+  }
+
+  // 將既有支出載入草稿，供編輯模式使用。
+  // 修改日期：2026-11-26
+  function loadExpenseIntoDraft(expense) {
+    if (!expense) return;
+    const isItemized = !!(expense.items && expense.items.length);
+    resetExpenseDraft(isItemized ? "itemized" : "direct");
+    expenseDraft.split = expense.split || "equal";
+    expenseDraft.loadedExpenseId = expense.id;
+    if (isItemized) {
+      expenseDraft.items = expense.items.map((it) => ({
+        id: it.id || uid(),
+        name: it.name || "",
+        quantity: it.quantity != null ? it.quantity : 1,
+        unit: it.unit || "",
+        unitPrice: it.unitPrice != null ? it.unitPrice : "",
+        discount: it.discount != null ? it.discount : 0,
+        note: it.note || "",
+        allocations: { ...(it.allocations || {}) },
+        saved: true,
+        savedAllocations: { ...(it.allocations || {}) },
+        gross: it.gross,
+        net: it.net
+      }));
+      expenseDraft.expandedItemId = null;
+    }
+    // 匯率狀態
+    expenseFxState.isManual = !!expense.fxRateManual;
+    expenseFxState.rate = expense.fxRate || null;
+    expenseFxState.error = null;
   }
 
   // 四捨五入至小數點後一位
@@ -654,7 +788,10 @@ const expenseFxState = {
       }
       if (twdHint) twdHint.textContent = "由日幣金額 × 匯率自動換算";
       const dateInput = form.querySelector('input[name="date"]');
-      if (dateInput && dateInput.value) loadFxRateForDate(dateInput.value);
+      // 編輯模式且已有保存的匯率時，不重新取得，保留原值。
+      if (dateInput && dateInput.value && expenseFxState.rate == null) {
+        loadFxRateForDate(dateInput.value);
+      }
     } else {
       if (cashFx) cashFx.hidden = true;
       if (twdInput) {
@@ -762,7 +899,7 @@ const expenseFxState = {
     const allocInfo = getAllocationStatus(item);
     const unitLabel = item.unit ? escapeHtml(item.unit) : "件";
     const currentSplit = expenseDraft.split || "equal";
-    const isPersonalSplit = currentSplit === "personal";
+    const isItemsSplit = currentSplit === "items";
 
     const memberInputs = state.members.map((member) => {
       const val = (item.allocations && item.allocations[member.id] != null && item.allocations[member.id] !== "")
@@ -846,7 +983,7 @@ const expenseFxState = {
             '<span class="calc-net-total">折後：<b class="calc-net">¥' + calc.net.toLocaleString("zh-TW") + '</b></span>' +
           '</div>' +
 
-          '<div class="item-allocation-card-block"' + (isPersonalSplit ? ' style="display:none;"' : "") + '>' +
+          '<div class="item-allocation-card-block"' + (isItemsSplit ? "" : ' style="display:none;"') + '>' +
             '<div class="item-allocation-card-header">' +
               '<span class="item-allocation-card-title">旅伴分配數量</span>' +
               '<span class="allocation-badge ' + allocInfo.status + '">' +
@@ -1173,6 +1310,72 @@ const expenseFxState = {
   }
 
   // ==========================================
+  // 行程頁左右滑動切換日期（觸控手勢）。
+  // 修改日期：2026-11-28
+  function initItinerarySwipe() {
+    const container = document.querySelector(".itinerary-list");
+    if (!container || container.dataset.swipeInitialized === "true") return;
+    container.dataset.swipeInitialized = "true";
+
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    container.addEventListener("touchstart", (e) => {
+      if (!e.touches || e.touches.length !== 1) { tracking = false; return; }
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      tracking = true;
+    }, { passive: true });
+
+    container.addEventListener("touchmove", (e) => {
+      if (!tracking || !e.touches || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      // 垂直滑動為主時，停止追蹤，允許頁面捲動。
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+        tracking = false;
+      }
+    }, { passive: true });
+
+    container.addEventListener("touchend", (e) => {
+      if (!tracking) return;
+      tracking = false;
+      if (!e.changedTouches || e.changedTouches.length === 0) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      // 滑動距離門檻。
+      if (Math.abs(dx) < 60) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+
+      const start = state.trip.start;
+      const end = state.trip.end;
+      const days = [];
+      if (start && end && start <= end) {
+        let cur = start;
+        while (cur <= end) { days.push(cur); cur = addDays(cur, 1); }
+      }
+      const idx = days.indexOf(state.selectedItineraryDate);
+      if (idx < 0) return;
+
+      let newIdx = idx;
+      if (dx < 0) {
+        // 向左滑 → 下一天
+        if (idx < days.length - 1) newIdx = idx + 1;
+      } else {
+        // 向右滑 → 上一天
+        if (idx > 0) newIdx = idx - 1;
+      }
+      if (newIdx !== idx) {
+        state.selectedItineraryDate = days[newIdx];
+        render();
+      }
+    }, { passive: true });
+  }
+
   // 品項長按 1 秒拖曳排序與展開收合管理
   // ==========================================
 
@@ -1423,9 +1626,36 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
     // 修改日期：2026-11-20
     // 新增支出表單：支援逐項記錄與直接輸入總額兩種模式
 
+    const editingExpense = state.editingExpenseId
+      ? state.expenses.find((e) => e.id === state.editingExpenseId && e.tripId === state.trip.id)
+      : null;
+
+    // 編輯模式：載入原始資料至草稿。
+    if (editingExpense && expenseDraft.loadedExpenseId !== editingExpense.id) {
+      loadExpenseIntoDraft(editingExpense);
+    }
+
     const isItemized = expenseDraft.mode === "itemized";
     const totals = calculateItemsTotal();
-    const jpyVal = isItemized ? (totals.totalNet > 0 ? totals.totalNet : "") : "";
+    const jpyVal = isItemized
+      ? (totals.totalNet > 0 ? totals.totalNet : (editingExpense ? editingExpense.jpy : ""))
+      : (editingExpense ? editingExpense.jpy : "");
+    const twdVal = editingExpense && editingExpense.twd != null ? editingExpense.twd : "";
+    const titleVal = editingExpense ? escapeHtml(editingExpense.title || "") : "";
+    const dateVal = editingExpense ? (editingExpense.date || today(state.trip.timezone)) : today(state.trip.timezone);
+    const categoryVal = editingExpense ? editingExpense.category : "餐飲";
+    const methodVal = editingExpense ? editingExpense.method : "現金";
+    const payerVal = editingExpense ? editingExpense.payer : null;
+    const discountVal = editingExpense ? (editingExpense.discount != null ? editingExpense.discount : 0) : 0;
+    const rewardVal = editingExpense ? (editingExpense.reward != null ? editingExpense.reward : 0) : 0;
+    const rewardAllocVal = editingExpense ? (editingExpense.rewardAllocation || "proportional") : "proportional";
+    const fxRateVal = editingExpense && editingExpense.fxRate != null ? editingExpense.fxRate : "";
+
+    // 若為現金且有系統匯率，初始化載入旗標
+    if (editingExpense && editingExpense.method === "現金" && expenseFxState.rate == null && editingExpense.fxRate) {
+      expenseFxState.rate = editingExpense.fxRate;
+      expenseFxState.isManual = !!editingExpense.fxRateManual;
+    }
 
     return (
       pageHeader("NEW EXPENSE", "新增支出", "先記錄消費，再確認付款與分帳細節。") +
@@ -1435,20 +1665,17 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       // 一、基本資料
       '<h3>基本資料</h3>' +
       '<div class="field"><label for="expense-title">支出名稱</label>' +
-      '<input id="expense-title" name="title" required maxlength="80" placeholder="例如：博多拉麵"></div>' +
+      '<input id="expense-title" name="title" required maxlength="80" placeholder="例如：博多拉麵" value="' + titleVal + '"></div>' +
 
       '<div class="form-grid">' +
       '<div class="field"><label>消費日期</label>' +
-      '<input name="date" type="date" value="' + today(state.trip.timezone) + '" required></div>' +
+      '<input name="date" type="date" value="' + dateVal + '" required></div>' +
 
       '<div class="field"><label>支出分類</label>' +
       '<select name="category">' +
-      '<option value="餐飲">餐飲</option>' +
-      '<option value="交通">交通</option>' +
-      '<option value="住宿">住宿</option>' +
-      '<option value="購物">購物</option>' +
-      '<option value="門票">門票</option>' +
-      '<option value="其他">其他</option>' +
+      ['餐飲','交通','住宿','購物','門票','其他'].map((c) =>
+        '<option value="' + c + '"' + (categoryVal === c ? " selected" : "") + '>' + c + '</option>'
+      ).join("") +
       '</select></div></div>' +
       '</div>' +
 
@@ -1507,19 +1734,19 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       // 四、付款資訊
       '<h3>付款資訊</h3>' +
       '<div class="field payment-method"><label>付款方式</label>' +
-      '<label class="choice"><input type="radio" name="method" value="現金" checked>現金</label>' +
-      '<label class="choice"><input type="radio" name="method" value="信用卡">信用卡</label></div>' +
+      '<label class="choice"><input type="radio" name="method" value="現金"' + (methodVal === "現金" ? " checked" : "") + '>現金</label>' +
+      '<label class="choice"><input type="radio" name="method" value="信用卡"' + (methodVal === "信用卡" ? " checked" : "") + '>信用卡</label></div>' +
 
       // 現金付款：依消費日期取得匯率並自動換算台幣（依 2026-11-21 規格）
       '<div id="cash-fx-fields">' +
       '<div class="form-grid">' +
       '<div class="field">' +
       '<label>匯率 (JPY→TWD) <span class="optional-hint">(可手動修改)</span></label>' +
-      '<input id="fx-rate" name="fxRate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="載入中…">' +
-      '<small id="fx-rate-status" class="hint">系統匯率</small></div>' +
+      '<input id="fx-rate" name="fxRate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="載入中…" value="' + escapeHtml(String(fxRateVal)) + '">' +
+      '<small id="fx-rate-status" class="hint">' + (expenseFxState.isManual ? "手動覆寫" : "系統匯率") + '</small></div>' +
       '<div class="field">' +
       '<label>換算台幣金額</label>' +
-      '<input id="fx-converted" type="text" readonly class="readonly-calc" placeholder="—">' +
+      '<input id="fx-converted" type="text" readonly class="readonly-calc" placeholder="—" value="' + (twdVal !== "" ? twdVal : "") + '">' +
       '<small class="hint">由日幣金額 × 匯率自動計算</small></div>' +
       '</div>' +
       '<small id="fx-error" class="hint" style="color:var(--danger); display:none;"></small>' +
@@ -1527,13 +1754,13 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
 
       '<div class="form-grid">' +
       '<div class="field"><label>實際台幣金額</label>' +
-      '<input id="expense-twd" name="twd" type="number" min="0" step="1" placeholder="待補可留空">' +
-      '<small id="twd-hint" class="hint">由匯率自動換算</small></div>' +
+      '<input id="expense-twd" name="twd" type="number" min="0" step="1" placeholder="待補可留空" value="' + (twdVal !== "" ? twdVal : "") + '">' +
+      '<small id="twd-hint" class="hint">' + (methodVal === "現金" ? "由匯率自動換算" : "以帳單實際請款金額為準") + '</small></div>' +
 
       '<div class="field"><label>付款人</label>' +
       '<select name="payer">' +
       state.members.map((member) =>
-        '<option value="' + escapeHtml(member.name) + '">' +
+        '<option value="' + escapeHtml(member.name) + '"' + (payerVal === member.name ? " selected" : "") + '>' +
         escapeHtml(member.name) + '</option>'
       ).join("") +
       '</select></div></div>' +
@@ -1544,20 +1771,20 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
       '<div class="form-grid">' +
       '<div class="field">' +
       '<label>折扣金額</label>' +
-      '<input name="discount" type="number" min="0" step="0.1" value="0">' +
+      '<input name="discount" type="number" min="0" step="0.1" value="' + discountVal + '">' +
       '<small class="hint">折扣明細及分配計算將於下一階段實作。</small></div>' +
 
       '<div class="field">' +
       '<label>信用卡回饋點數</label>' +
-      '<input name="reward" type="number" min="0" step="1" value="0">' +
+      '<input name="reward" type="number" min="0" step="1" value="' + rewardVal + '">' +
       '</div>' +
       '</div>' +
 
       '<div class="field">' +
       '<label>回饋分配方式</label>' +
       '<select name="rewardAllocation">' +
-      '<option value="proportional">依各旅伴實際消費比例分配</option>' +
-      '<option value="cardholder">全部歸刷卡人</option>' +
+      '<option value="proportional"' + (rewardAllocVal === "proportional" ? " selected" : "") + '>依各旅伴實際消費比例分配</option>' +
+      '<option value="cardholder"' + (rewardAllocVal === "cardholder" ? " selected" : "") + '>全部歸刷卡人</option>' +
       '</select></div>' +
       '</div>' +
 
@@ -1584,7 +1811,7 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
     if (!item) return '<div class="empty">找不到這筆支出。<button class="btn" data-page="trip">返回</button></div>';
 
     // 顯示返回按鈕、支出名稱、日期與分類。
-    return '<button class="back" data-page="trip">← 返回旅行總覽</button>' +
+    return '<button class="back" data-page="bookkeeping">← 返回記帳清單</button>' +
       pageHeader("EXPENSE DETAIL", escapeHtml(item.title), item.date + " · " + escapeHtml(item.category)) +
 
       // 顯示支出詳細資料。
@@ -1638,9 +1865,22 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
           item.items.map((it) => {
             let allocInfo = "";
             if (item.split === "items" && it.allocations && Object.keys(it.allocations).length > 0) {
-              const allocatedList = state.members
-                .filter((m) => Number(it.allocations[m.id]) > 0)
-                .map((m) => `${escapeHtml(m.name)}: ${it.allocations[m.id]} ${escapeHtml(it.unit || "件")}`)
+              // 優先使用支出建立時保存的旅伴快照。
+              // 沒有快照時，使用來源旅程的旅伴清單。
+              // 來源旅程不存在時，顯示「未知旅伴」，不再回退目前旅程的成員。
+              // 修改日期：2026-11-24
+              const detailMembers = (item.members && item.members.length)
+                ? item.members
+                : (state.membersByTrip[item.tripId] || []);
+              const memberNameById = Object.fromEntries(
+                detailMembers.map((m) => [m.id, m.name])
+              );
+              const allocatedList = Object.keys(it.allocations)
+                .filter((id) => Number(it.allocations[id]) > 0)
+                .map((id) => {
+                  const name = memberNameById[id] || "未知旅伴";
+                  return `${escapeHtml(name)}: ${it.allocations[id]} ${escapeHtml(it.unit || "件")}`;
+                })
                 .join("、");
               if (allocatedList) {
                 allocInfo = '<div class="allocation-detail-list">分配：' + allocatedList + '</div>';
@@ -1662,9 +1902,11 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
           '</div>'
         : '') +
 
-      // 提供取消這筆示範支出的按鈕。
-      '<div class="actions"><button class="btn danger" data-action="cancel-expense" data-id="' +
-      item.id + '">取消示範支出</button></div>' +
+      // 提供編輯與取消這筆示範支出的按鈕。
+      '<div class="actions">' +
+      '<button class="btn" type="button" data-action="edit-expense" data-id="' + escapeHtml(item.id) + '">編輯支出</button>' +
+      '<button class="btn danger" type="button" data-action="cancel-expense" data-id="' + escapeHtml(item.id) + '">取消示範支出</button>' +
+      '</div>' +
 
       // 提醒正式付款明細與分帳結果尚未連接後端。
       '<p class="hint">正式付款明細與分帳結果尚待後端 API 對接。</p>';
@@ -1717,25 +1959,28 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
   // =========================
 
   function renderMembers() {
-
     // 顯示旅伴管理頁面的標題與說明。
+    const fullMembers = state.membersByTrip[state.trip.id] || [];
     return pageHeader("TRAVEL MEMBERS", "旅伴管理", "查看成員並邀請旅伴加入同一本旅行帳本。") +
-
-      // 將所有旅伴資料轉換成畫面上的成員項目。
-      '<div class="card">' + state.members.map((member, index) =>
-
-        // 顯示成員頭像、名稱與角色。
-        '<div class="member"><span class="avatar">' +
-        escapeHtml(member.name.slice(0, 1)) +
-        '</span><span class="member-info"><strong>' +
-        escapeHtml(member.name) +
-        "</strong><small>" + escapeHtml(member.role) + "</small></span>" +
-
-        // 第一位成員額外顯示「你」的標籤。
-        (index === 0 ? '<span class="pill">你</span>' : "") + "</div>"
-
-      // 合併所有成員項目，並提供產生示範邀請碼的按鈕。
-      ).join("") + "</div><div class=\"actions\"><button class=\"btn\" data-action=\"invite\">產生示範邀請碼</button></div>";
+      // 將所有未移除的旅伴資料轉換成畫面上的成員項目。
+      '<div class="card">' + state.members.map((member) => {
+        const isCreator = fullMembers.findIndex((m) => m.id === member.id) === 0;
+        return (
+          '<div class="member" data-member-id="' + escapeHtml(member.id) + '">' +
+          '<span class="avatar">' + escapeHtml(member.name.slice(0, 1)) + '</span>' +
+          '<span class="member-info"><strong>' + escapeHtml(member.name) + '</strong>' +
+          '<small>' + escapeHtml(member.role) + '</small></span>' +
+          (isCreator ? '<span class="pill">你</span>' : '') +
+          '<div style="display:flex;gap:6px;">' +
+          '<button class="btn secondary small" type="button" data-action="edit-member" data-id="' + escapeHtml(member.id) + '">編輯</button>' +
+          (isCreator ? '' : '<button class="btn danger small" type="button" data-action="remove-member" data-id="' + escapeHtml(member.id) + '">移除</button>') +
+          '</div></div>'
+        );
+      }).join("") + '</div>' +
+      '<div class="actions">' +
+      '<button class="btn" type="button" data-action="add-member">＋ 新增旅伴</button>' +
+      '<button class="btn secondary" type="button" data-action="invite">產生示範邀請碼</button>' +
+      '</div>';
   }
 
   // =========================
@@ -1772,28 +2017,115 @@ if (dragActive && draggedItemElement && dragPlaceholder) {
 // =========================
 
 function renderItinerary() {
-
   // 顯示目前旅程名稱與行程頁標題。
+  const start = state.trip.start;
+  const end = state.trip.end;
+
+  // 產生每日日期清單（含開始日與結束日）。
+  const days = [];
+  if (start && end && start <= end) {
+    let cur = start;
+    while (cur <= end) {
+      days.push(cur);
+      cur = addDays(cur, 1);
+    }
+  }
+
+  // 預設選取第一天。
+  if (state.selectedItineraryDate === null || !days.includes(state.selectedItineraryDate)) {
+    state.selectedItineraryDate = days.length ? days[0] : null;
+  }
+  const selectedDate = state.selectedItineraryDate;
+
+  const itinerary = state.itinerary || {};
+
+  // 日期標籤列（精簡橫向）。
+  const dateBar = days.length
+    ? '<div class="itinerary-date-bar">' +
+      days.map((d) => {
+        const isActive = d === selectedDate;
+        return (
+          '<button type="button" class="itinerary-date-tab' + (isActive ? " active" : "") + '" ' +
+          'data-action="select-itinerary-date" data-date="' + escapeHtml(d) + '">' +
+          escapeHtml(d.slice(5).replace("-", "/")) + "（" + escapeHtml(weekdayZh(d)) + "）" +
+          "</button>"
+        );
+      }).join("") +
+      "</div>"
+    : "";
+
+  // 單日景點。
+  let body = "";
+  if (days.length === 0) {
+    body = '<div class="empty">目前尚未設定旅程日期，無法產生每日行程。</div>';
+  } else if (!selectedDate) {
+    body = '<div class="empty">請選擇日期。</div>';
+  } else {
+    const spots = Array.isArray(itinerary[selectedDate]) ? itinerary[selectedDate] : [];
+    const spotsHtml = spots.length
+      ? spots.map((spot) => {
+          const transport = spot.transport
+            ? '<div class="itinerary-transport">交通：' + escapeHtml(spot.transport) + '</div>'
+            : "";
+          const timeRange = (spot.departTime || spot.arriveTime)
+            ? '<div class="itinerary-time">' +
+              escapeHtml(spot.departTime || "") +
+              (spot.arriveTime ? " → " + escapeHtml(spot.arriveTime) : "") +
+              "</div>"
+            : "";
+          const address = spot.address
+            ? '<div class="itinerary-address">' + escapeHtml(spot.address) + '</div>'
+            : "";
+          const note = spot.note
+            ? '<div class="itinerary-note">' + escapeHtml(spot.note) + '</div>'
+            : "";
+          const mapLink = spot.mapUrl
+            ? '<a class="itinerary-map-link" href="' + escapeHtml(spot.mapUrl) + '" target="_blank" rel="noopener">地圖</a>'
+            : "";
+          return (
+            '<div class="itinerary-spot">' +
+            '<div class="itinerary-spot-name">' + escapeHtml(spot.name || "未命名景點") + mapLink +
+            '<button class="btn secondary small" type="button" data-action="edit-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-id="' + escapeHtml(spot.id) + '" style="margin-left:auto;">編輯</button>' +
+            '<button class="btn danger small" type="button" data-action="remove-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-id="' + escapeHtml(spot.id) + '">刪除</button>' +
+            "</div>" +
+            address +
+            timeRange +
+            transport +
+            note +
+            "</div>"
+          );
+        }).join("")
+      : '<div class="empty itinerary-empty">尚未安排景點</div>';
+    body =
+      '<div class="itinerary-day">' +
+      '<div class="itinerary-day-header">' +
+      '<span class="itinerary-date">' + escapeHtml(selectedDate.replace(/-/g, "/")) + "</span>" +
+      '<span class="itinerary-weekday">' + escapeHtml(weekdayZh(selectedDate)) + "</span>" +
+      '<button class="btn small" type="button" data-action="add-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" style="margin-left:auto;">＋新增景點</button>' +
+      "</div>" +
+      '<div class="itinerary-spots">' + spotsHtml + "</div>" +
+      "</div>";
+  }
+
+  // 捲動日期列讓選取日期可見（僅在不可見時調整，避免無故飄移）。
+  setTimeout(() => {
+    const bar = document.querySelector(".itinerary-date-bar");
+    const active = bar && bar.querySelector(".itinerary-date-tab.active");
+    if (!bar || !active) return;
+    const barRect = bar.getBoundingClientRect();
+    const tabRect = active.getBoundingClientRect();
+    if (tabRect.left >= barRect.left && tabRect.right <= barRect.right) return;
+    const targetLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+    bar.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }, 0);
+
   return pageHeader(
     "TRAVEL ITINERARY",
     "每日行程",
     state.trip.name + "｜安排每天的景點與交通"
   ) +
-
-  // 每日行程主要內容區域。
-  '<div class="card">' +
-
-    // 行程區塊標題。
-    '<div class="section-head">' +
-      '<h2>每日行程</h2>' +
-    '</div>' +
-
-    // 尚未建立行程時顯示的提示。
-    '<div class="empty">' +
-      '目前尚未安排每日行程' +
-    '</div>' +
-
-  '</div>';
+    dateBar +
+    '<div class="itinerary-list">' + body + "</div>";
 }
 
 
@@ -1841,6 +2173,9 @@ function renderItinerary() {
 
     // 確保新增支出畫面渲染時拖曳事件被初始化
     initItemDragAndDrop();
+
+    // 行程頁：初始化左右滑動切換日期手勢。
+    if (state.page === "itinerary") initItinerarySwipe();
   }
 
 
@@ -1850,9 +2185,16 @@ function renderItinerary() {
 
   function navigate(page) {
 
-    // 切換至新增支出時，重置品項草稿
+    // 切換至新增支出時，重置品項草稿（編輯模式除外）。
+    // 修改日期：2026-11-26
     if (page === "expense-new") {
-      resetExpenseDraft("direct");
+      if (!state.editingExpenseId) {
+        resetExpenseDraft("direct");
+      }
+    } else {
+      // 離開新增/編輯支出頁時，清除編輯狀態。
+      state.editingExpenseId = null;
+      expenseDraft.loadedExpenseId = null;
     }
 
     // 確認目標頁面存在，不存在時返回首頁。
@@ -2045,10 +2387,38 @@ function renderItinerary() {
           break;
         }
 
+        // 確保該旅程有獨立的旅伴清單。
+        // 修改日期：2026-11-24
+        if (!state.membersByTrip[selectedTrip.id]) {
+          state.membersByTrip[selectedTrip.id] = [
+            { id: uid(), name: "我", role: "主要管理者" }
+          ];
+        }
+
+        // 確保該旅程有獨立的行程資料。
+        // 修改日期：2026-11-26
+        if (!state.itineraryByTrip[selectedTrip.id]) {
+          state.itineraryByTrip[selectedTrip.id] = {};
+        }
+
         state.trip = {
-          ...state.trip,
-          ...selectedTrip
+          id: selectedTrip.id,
+          name: selectedTrip.name,
+          dates: selectedTrip.dates,
+          start: selectedTrip.start || selectedTrip.dates?.split(" – ")[0]?.trim() || "",
+          end: selectedTrip.end || selectedTrip.dates?.split(" – ")[1]?.trim() || "",
+          status: selectedTrip.status || "準備中",
+          memberCount: selectedTrip.memberCount || 1,
+          totalJPY: selectedTrip.totalJPY || 0,
+          totalTWD: selectedTrip.totalTWD || 0,
+          timezone: selectedTrip.timezone || "Asia/Taipei"
         };
+
+        // 重置旅程相關狀態，避免前一趟旅程的資料混用。
+        state.selectedExpenseId = null;
+        state.bookkeepingSort = "desc";
+        state.bookkeepingCollapsedDates = [];
+        state.selectedItineraryDate = null;
 
         navigate("trip");
         break;
@@ -2136,6 +2506,8 @@ function renderItinerary() {
       // 新增支出：以全螢幕彈窗顯示原有記帳表單。
       // 修改日期：2026-11-14
       case "new-expense":
+        state.editingExpenseId = null;
+        expenseDraft.loadedExpenseId = null;
         resetExpenseDraft("direct");
         showDialog(renderExpenseForm());
         setTimeout(() => initExpenseFormFx(), 0);
@@ -2190,6 +2562,150 @@ function renderItinerary() {
       case "join":
         showDialog('<h2>加入旅行</h2><form id="join-form" class="form"><div class="field"><label>邀請碼</label><input name="code" required maxlength="30"></div><div class="field"><label>暱稱</label><input name="nickname" required maxlength="20"></div><button class="btn">送出</button></form>');
         break;
+
+      // 新增旅伴：開啟表單。
+      case "add-member": {
+        showDialog(
+          '<h2>新增旅伴</h2>' +
+          '<form id="member-form" class="form" data-mode="add">' +
+          '<div class="field"><label>旅伴名稱</label>' +
+          '<input name="name" required maxlength="20" placeholder="例如：小明"></div>' +
+          '<div class="field"><label>角色</label>' +
+          '<select name="role">' +
+          '<option value="旅伴">旅伴</option>' +
+          '<option value="主要管理者">主要管理者</option>' +
+          '</select></div>' +
+          '<button class="btn" type="submit">新增</button></form>'
+        );
+        break;
+      }
+
+      // 編輯旅伴：開啟預填表單。
+      case "edit-member": {
+        const memberId = actionButton.dataset.id;
+        const member = (state.membersByTrip[state.trip.id] || []).find((m) => m.id === memberId);
+        if (!member) { showToast("找不到該旅伴"); break; }
+        const isCreator = (state.membersByTrip[state.trip.id] || []).findIndex((m) => m.id === memberId) === 0;
+        showDialog(
+          '<h2>編輯旅伴</h2>' +
+          '<form id="member-form" class="form" data-mode="edit" data-id="' + escapeHtml(memberId) + '">' +
+          '<div class="field"><label>旅伴名稱</label>' +
+          '<input name="name" required maxlength="20" value="' + escapeHtml(member.name) + '"></div>' +
+          '<div class="field"><label>角色</label>' +
+          '<select name="role"' + (isCreator ? ' disabled' : '') + '>' +
+          '<option value="旅伴"' + (member.role === "旅伴" ? " selected" : "") + '>旅伴</option>' +
+          '<option value="主要管理者"' + (member.role === "主要管理者" ? " selected" : "") + '>主要管理者</option>' +
+          '</select>' +
+          (isCreator ? '<small class="hint">建立者角色不可變更</small>' : '') +
+          '</div>' +
+          '<button class="btn" type="submit">儲存</button></form>'
+        );
+        break;
+      }
+
+      // 移除旅伴：軟刪除，保留歷史資料。
+      case "remove-member": {
+        const memberId = actionButton.dataset.id;
+        const fullMembers = state.membersByTrip[state.trip.id] || [];
+        const idx = fullMembers.findIndex((m) => m.id === memberId);
+        if (idx < 0) { showToast("找不到該旅伴"); break; }
+        if (idx === 0) { showToast("建立者不可移除"); break; }
+        if (!window.confirm("確定移除這位旅伴？歷史支出資料將保留。")) break;
+        fullMembers[idx].removed = true;
+        render();
+        showToast("旅伴已移除");
+        break;
+      }
+
+      // 新增景點：開啟表單（日期自動帶入）。
+      case "add-itinerary-spot": {
+        const date = actionButton.dataset.date;
+        showDialog(
+          '<h2>新增景點</h2>' +
+          '<form id="itinerary-spot-form" class="form" data-date="' + escapeHtml(date) + '" data-spot-id="">' +
+          '<div class="field"><label>景點名稱 <span class="required-star">*</span></label>' +
+          '<input name="name" required maxlength="80" placeholder="例如：博多運河城"></div>' +
+          '<div class="field"><label>地址</label>' +
+          '<input name="address" maxlength="200" placeholder="選填"></div>' +
+          '<div class="field"><label>交通方式（從上一景點前往）</label>' +
+          '<input name="transport" maxlength="40" placeholder="步行、地鐵、計程車..."></div>' +
+          '<div class="form-grid">' +
+          '<div class="field"><label>預計出發</label>' +
+          '<input name="departTime" type="time"></div>' +
+          '<div class="field"><label>預計抵達</label>' +
+          '<input name="arriveTime" type="time"></div>' +
+          '</div>' +
+          '<div class="field"><label>備註</label>' +
+          '<textarea name="note" maxlength="200" style="width:100%;min-height:60px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;resize:vertical;" placeholder="選填"></textarea></div>' +
+          '<button class="btn" type="submit">儲存景點</button></form>'
+        );
+        break;
+      }
+
+      // 刪除景點：軟確認後移除，保留其他景點。
+      // 修改日期：2026-11-28
+      case "remove-itinerary-spot": {
+        const date = actionButton.dataset.date;
+        const spotId = actionButton.dataset.id;
+        if (!date || !spotId) { showToast("找不到該景點"); break; }
+        if (!window.confirm("確定刪除這個景點？")) break;
+        const spots = state.itinerary[date];
+        if (Array.isArray(spots)) {
+          const idx = spots.findIndex((s) => s.id === spotId);
+          if (idx >= 0) {
+            spots.splice(idx, 1);
+            if (spots.length === 0) {
+              delete state.itinerary[date];
+            }
+            showToast("景點已刪除");
+          } else {
+            showToast("找不到該景點");
+          }
+        }
+        state.page = "itinerary";
+        render();
+        break;
+      }
+
+      // 編輯景點：載入原有資料。
+      case "edit-itinerary-spot": {
+        const date = actionButton.dataset.date;
+        const spotId = actionButton.dataset.id;
+        const spots = (state.itinerary && state.itinerary[date]) || [];
+        const spot = spots.find((s) => s.id === spotId);
+        if (!spot) { showToast("找不到該景點"); break; }
+        showDialog(
+          '<h2>編輯景點</h2>' +
+          '<form id="itinerary-spot-form" class="form" data-date="' + escapeHtml(date) + '" data-spot-id="' + escapeHtml(spotId) + '">' +
+          '<div class="field"><label>景點名稱 <span class="required-star">*</span></label>' +
+          '<input name="name" required maxlength="80" value="' + escapeHtml(spot.name || "") + '"></div>' +
+          '<div class="field"><label>地址</label>' +
+          '<input name="address" maxlength="200" value="' + escapeHtml(spot.address || "") + '"></div>' +
+          '<div class="field"><label>交通方式（從上一景點前往）</label>' +
+          '<input name="transport" maxlength="40" value="' + escapeHtml(spot.transport || "") + '"></div>' +
+          '<div class="form-grid">' +
+          '<div class="field"><label>預計出發</label>' +
+          '<input name="departTime" type="time" value="' + escapeHtml(spot.departTime || "") + '"></div>' +
+          '<div class="field"><label>預計抵達</label>' +
+          '<input name="arriveTime" type="time" value="' + escapeHtml(spot.arriveTime || "") + '"></div>' +
+          '</div>' +
+          '<div class="field"><label>備註</label>' +
+          '<textarea name="note" maxlength="200" style="width:100%;min-height:60px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;resize:vertical;">' + escapeHtml(spot.note || "") + '</textarea></div>' +
+          '<button class="btn" type="submit">儲存景點</button></form>'
+        );
+        break;
+      }
+
+      // 行程日期切換：只顯示該日行程。
+      // 修改日期：2026-11-28
+      case "select-itinerary-date": {
+        const date = actionButton.dataset.date;
+        if (date) {
+          state.selectedItineraryDate = date;
+          render();
+        }
+        break;
+      }
 
       // 產生示範邀請碼。
       case "invite":
@@ -2279,6 +2795,17 @@ function renderItinerary() {
       }
 
       // 取消支出。
+      case "edit-expense": {
+        const expenseId = actionButton.dataset.id;
+        const expense = state.expenses.find((e) => e.id === expenseId && e.tripId === state.trip.id);
+        if (!expense) { showToast("找不到該支出"); break; }
+        state.editingExpenseId = expenseId;
+        state.selectedExpenseId = expenseId;
+        loadExpenseIntoDraft(expense);
+        navigate("expense-new");
+        break;
+      }
+
       case "cancel-expense": {
 
         // 根據按鈕上的支出 ID，尋找對應資料。
@@ -2306,6 +2833,87 @@ function renderItinerary() {
   // 統一監聽表單送出事件。
   document.addEventListener("submit", (event) => {
 
+
+    // -------------------------
+    // 旅伴新增/編輯表單
+    // 修改日期：2026-11-24
+    // -------------------------
+    if (event.target.id === "member-form") {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      const mode = event.target.dataset.mode;
+      const name = String(form.get("name") || "").trim();
+      const role = String(form.get("role") || "旅伴");
+
+      if (!name) {
+        showToast("請輸入旅伴名稱");
+        return;
+      }
+
+      const fullMembers = state.membersByTrip[state.trip.id];
+      if (mode === "add") {
+        fullMembers.push({ id: uid(), name: name, role: role });
+        showToast("旅伴已新增");
+      } else if (mode === "edit") {
+        const memberId = event.target.dataset.id;
+        const member = fullMembers.find((m) => m.id === memberId);
+        if (!member) { showToast("找不到該旅伴"); return; }
+        const isCreator = fullMembers.findIndex((m) => m.id === memberId) === 0;
+        member.name = name;
+        if (!isCreator) member.role = role;
+        showToast("旅伴已更新");
+      }
+
+      $("#dialog").close();
+      state.page = "members";
+      render();
+    }
+
+    // -------------------------
+    // 行程景點新增/編輯表單
+    // 修改日期：2026-11-27
+    // -------------------------
+    if (event.target.id === "itinerary-spot-form") {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      const date = event.target.dataset.date;
+      const spotId = event.target.dataset.spotId || "";
+      const name = String(form.get("name") || "").trim();
+
+      if (!name) {
+        showToast("請輸入景點名稱");
+        return;
+      }
+
+      if (!state.itinerary[date]) state.itinerary[date] = [];
+
+      const spotData = {
+        id: spotId || uid(),
+        name: name,
+        address: String(form.get("address") || "").trim(),
+        transport: String(form.get("transport") || "").trim() || null,
+        departTime: String(form.get("departTime") || "").trim(),
+        arriveTime: String(form.get("arriveTime") || "").trim(),
+        note: String(form.get("note") || "").trim()
+      };
+
+      if (spotId) {
+        const idx = state.itinerary[date].findIndex((s) => s.id === spotId);
+        if (idx >= 0) {
+          state.itinerary[date][idx] = spotData;
+        } else {
+          state.itinerary[date].push(spotData);
+        }
+        showToast("景點已更新");
+      } else {
+        state.itinerary[date].push(spotData);
+        showToast("景點已新增");
+      }
+
+      $("#dialog").close();
+      state.page = "itinerary";
+      render();
+    }
 
     // -------------------------
     // 編輯旅程表單
@@ -2534,11 +3142,12 @@ function renderItinerary() {
         return;
       }
 
-      // 將新支出資料加入 expenses 陣列最前面。
-      state.expenses.unshift({
+      // 將支出資料整理為物件（新增或編輯共用）。
+      // 修改日期：2026-11-26
+      const newExpenseData = {
 
-        // 產生新的支出 ID。
-        id: uid(),
+        // 產生新的支出 ID（編輯模式保留原 ID）。
+        id: state.editingExpenseId || uid(),
 
         // 綁定目前選取的旅程。
         // 修改日期：2026-11-12
@@ -2583,6 +3192,10 @@ function renderItinerary() {
         // 修改日期：2026-11-23
         split: split,
 
+        // 保存支出建立時的旅伴快照，供明細顯示使用，避免後續成員變更造成名稱錯誤。
+        // 修改日期：2026-11-24
+        members: state.members.map((m) => ({ id: m.id, name: m.name })),
+
         // 儲存信用卡回饋點數。
         reward: rewardValue,
 
@@ -2608,19 +3221,36 @@ function renderItinerary() {
         // 台幣尚未填寫時標記為待補；
         // 已填寫時標記為待後端確認。
         status: twdValue === null ? "待補" : "待後端確認"
-      });
+      };
 
-      // 儲存成功後重置品項草稿
-      resetExpenseDraft("direct");
-
-      // 顯示新增成功提示。
-      showToast("已加入本機示範紀錄");
-
-      // 返回旅行總覽頁面。
-      // 修改日期：2026-11-14
-      // 關閉新增支出彈窗，返回記帳頁面。
-      $("#dialog").close();
-      navigate("bookkeeping");
+      // 依模式儲存：編輯更新原紀錄，新增建立新紀錄。
+      // 修改日期：2026-11-26
+      if (state.editingExpenseId) {
+        const idx = state.expenses.findIndex((e) => e.id === state.editingExpenseId);
+        if (idx >= 0) {
+          const original = state.expenses[idx];
+          state.expenses[idx] = {
+            ...newExpenseData,
+            id: original.id,
+            tripId: original.tripId,
+            recordedAt: original.recordedAt,
+            members: original.members
+          };
+        }
+        const editingId = state.editingExpenseId;
+        state.editingExpenseId = null;
+        expenseDraft.loadedExpenseId = null;
+        resetExpenseDraft("direct");
+        showToast("支出已更新");
+        state.selectedExpenseId = editingId;
+        navigate("expense-detail");
+      } else {
+        state.expenses.unshift(newExpenseData);
+        resetExpenseDraft("direct");
+        showToast("已加入本機示範紀錄");
+        $("#dialog").close();
+        navigate("bookkeeping");
+      }
     }
 
 
@@ -2668,9 +3298,37 @@ function renderItinerary() {
         timezone: timezone
       });
 
-      // 關閉對話視窗並前往旅行總覽。
+      // 為新旅程初始化獨立的旅伴清單（建立者為主要管理者）。
+      // 修改日期：2026-11-24
+      state.membersByTrip[newTripId] = [
+        { id: uid(), name: "我", role: "主要管理者" }
+      ];
+
+      // 為新旅程初始化獨立的行程資料。
+      // 修改日期：2026-11-26
+      state.itineraryByTrip[newTripId] = {};
+
+      // 建立完成後直接切換至剛建立的旅程。
+      // 修改日期：2026-11-25
+      const newTrip = state.trips[0];
+      state.trip = {
+        id: newTrip.id,
+        name: newTrip.name,
+        dates: newTrip.dates,
+        start: newTrip.start,
+        end: newTrip.end,
+        status: newTrip.status,
+        memberCount: newTrip.memberCount,
+        totalJPY: newTrip.totalJPY,
+        totalTWD: newTrip.totalTWD,
+        timezone: newTrip.timezone
+      };
+      state.selectedExpenseId = null;
+      state.bookkeepingSort = "desc";
+      state.bookkeepingCollapsedDates = [];
+      state.selectedItineraryDate = null;
       $("#dialog").close();
-      navigate("home");
+      navigate("trip");
     }
 
     // -------------------------
@@ -2777,10 +3435,10 @@ function renderItinerary() {
         setExpenseMode("itemized");
       }
 
-      // 個人費用不分攤給其他旅伴：直接隱藏卡片內的分配區塊。
-      // 不重建 DOM，避免尚未儲存的品項輸入內容遺失。
+      // 旅伴分配數量欄位只在「依品項分攤」時顯示。
+      // 修改日期：2026-11-24
       document.querySelectorAll(".item-allocation-card-block").forEach((block) => {
-        block.style.display = split === "personal" ? "none" : "";
+        block.style.display = split === "items" ? "" : "none";
       });
     }
 
