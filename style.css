@@ -1,6 +1,82 @@
 /* ==============================
-   1. 全域主題設定
+   行程頁面（依 2026-11-26 規格）
    ============================== */
+.itinerary-list {
+  display: grid;
+  gap: 12px;
+}
+
+.itinerary-day {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.itinerary-day-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.itinerary-date {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.itinerary-weekday {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.itinerary-spots {
+  display: grid;
+  gap: 8px;
+}
+
+.itinerary-spot {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.itinerary-spot-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.itinerary-map-link {
+  font-size: 11px;
+  color: var(--green);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.itinerary-address,
+.itinerary-time,
+.itinerary-transport,
+.itinerary-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+.itinerary-empty {
+  padding: 8px 0;
+}
 
 /* 定義網站共用的顏色變數、字體、文字顏色與背景色。 */
 :root {
@@ -478,6 +554,7 @@ input.readonly-calc {
   background: var(--surface);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   user-select: none;
+  touch-action: pan-y;
 }
 
 /* 收合卡片外觀（依 2026-11-20 規格：僅顯示名稱與折後金額） */
@@ -575,21 +652,6 @@ input.readonly-calc {
   color: var(--green);
 }
 
-.item-delete-btn-header {
-  border: none;
-  background: transparent;
-  color: var(--danger);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.item-delete-btn-header:hover {
-  background: #f7e7e4;
-}
-
 .item-form-body {
   display: grid;
   gap: 10px;
@@ -648,6 +710,9 @@ input.readonly-calc {
   background: var(--surface);
   cursor: grabbing !important;
   border-color: var(--green);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* 拖曳過程中的虛線空位佔位符（依 2026-11-20 規格：原位置顯示虛線空位） */
@@ -677,4 +742,236 @@ input.readonly-calc {
   font-size: 11px;
   margin-top: 3px;
   min-height: 14px;
+}
+
+/* 品項數量與單位：手機版左右並排 */
+.item-form-body .form-grid {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+/* ==============================
+   16. 依品項分配樣式
+   ============================== */
+
+/* 品項卡片內嵌之旅伴分配區塊 */
+.item-allocation-card-block {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.item-allocation-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.item-allocation-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.allocation-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.allocation-badge.complete {
+  background: var(--soft);
+  color: var(--green);
+}
+
+.allocation-badge.incomplete {
+  background: #fff0df;
+  color: #98602e;
+}
+
+.allocation-badge.over {
+  background: #f7e7e4;
+  color: var(--danger);
+}
+
+.allocation-members-list {
+  display: grid;
+  gap: 8px;
+}
+
+.allocation-member-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.allocation-member-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.avatar-mini {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--green);
+  font-weight: 700;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.allocation-member-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.allocation-member-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.allocation-quantity-input {
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  padding: 6px 10px;
+  text-align: right;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.allocation-quantity-input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(49, 91, 69, 0.15);
+}
+
+.allocation-unit {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.allocation-progress-bar-wrap {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.allocation-progress-bar {
+  height: 100%;
+  background: #98602e;
+  transition: width 0.2s ease, background-color 0.2s ease;
+}
+
+.allocation-progress-bar.complete {
+  background: var(--green);
+}
+
+.allocation-progress-bar.over {
+  background: var(--danger);
+}
+
+.allocation-footer-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.allocation-progress-text {
+  color: var(--muted);
+}
+
+.allocation-diff-text {
+  font-weight: 700;
+}
+
+.allocation-diff-text.complete {
+  color: var(--green);
+}
+
+.allocation-diff-text.incomplete {
+  color: #98602e;
+}
+
+.allocation-diff-text.over {
+  color: var(--danger);
+}
+
+.allocation-detail-list {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+/* ==============================
+   行程頁日期導覽列（依 2026-11-28 規格）
+   ============================== */
+.itinerary-date-bar {
+  position: sticky;
+  top: 66px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0;
+  margin: 0 0 12px;
+  background: var(--bg);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-snap-type: x mandatory;
+}
+
+.itinerary-date-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.itinerary-date-tab {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+
+.itinerary-date-tab.active {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
 }
