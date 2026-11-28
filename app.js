@@ -1376,6 +1376,204 @@ const expenseFxState = {
     }, { passive: true });
   }
 
+  // 行程頁時間軸長按拖曳排序（觸控 + 滑鼠）。
+  // 修改日期：2026-11-28
+  let itinDragTimer = null;
+  let itinDragActive = false;
+  let itinDraggedEl = null;
+  let itinDragPlaceholder = null;
+  let itinIsPointerDown = false;
+  let itinDragMoved = false;
+  let itinDragPointerStartX = 0;
+  let itinDragPointerStartY = 0;
+
+  let itinDragDelegated = false;
+
+  function initItineraryTimelineDragAndDrop() {
+    const container = document.querySelector(".itinerary-timeline");
+    if (!container || container.dataset.dragInitialized === "true") return;
+    container.dataset.dragInitialized = "true";
+
+    if (itinDragDelegated) return;
+    itinDragDelegated = true;
+
+    document.addEventListener("pointerdown", (e) => {
+      const handle = e.target && e.target.closest ? e.target.closest(".itinerary-drag-handle") : null;
+      if (!handle) return;
+      showToast("pointerdown on handle");
+      if (e.target.closest("button, input, select, textarea, a")) return;
+      const row = handle.closest(".timeline-row");
+      if (!row) return;
+
+      const lc = document.querySelector(".itinerary-timeline");
+      if (!lc) return;
+
+      itinIsPointerDown = true;
+      itinDragMoved = false;
+      itinDragPointerStartX = e.clientX;
+      itinDragPointerStartY = e.clientY;
+
+      itinDragTimer = setTimeout(() => {
+        showToast("drag timer fired");
+        itinDragActive = true;
+        itinDraggedEl = row;
+        row.classList.add("is-dragging");
+        const rect = row.getBoundingClientRect();
+        const placeholder = document.createElement("div");
+        placeholder.className = "itinerary-drag-placeholder";
+        placeholder.style.height = rect.height + "px";
+        itinDragPlaceholder = placeholder;
+        const c = document.querySelector(".itinerary-timeline");
+        if (c) c.insertBefore(placeholder, row);
+
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+
+        row.style.position = "fixed";
+        row.style.left = rect.left + "px";
+        row.style.top = rect.top + "px";
+        row.style.width = rect.width + "px";
+        row.style.zIndex = "1000";
+        row.style.pointerEvents = "none";
+        row.style.opacity = "0.9";
+        itinDragTimer = null;
+      }, 700);
+    });
+
+    const onPointerMove = (e) => {
+      if (!itinIsPointerDown) return;
+      if (itinDragTimer) {
+        const dist = Math.hypot(e.clientX - itinDragPointerStartX, e.clientY - itinDragPointerStartY);
+        if (dist > 8) {
+          clearTimeout(itinDragTimer);
+          itinDragTimer = null;
+          itinDragMoved = true;
+        }
+      }
+      if (itinDragActive && itinDraggedEl && itinDragPlaceholder) {
+        e.preventDefault();
+        itinDraggedEl.style.left = (e.clientX - dragOffsetX) + "px";
+        itinDraggedEl.style.top = (e.clientY - dragOffsetY) + "px";
+
+        const c = document.querySelector(".itinerary-timeline");
+        if (!c) return;
+        const rows = Array.from(c.querySelectorAll(".timeline-row:not(.is-dragging)"));
+        let insertBefore = null;
+        for (const r of rows) {
+          const rect = r.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) { insertBefore = r; break; }
+        }
+        if (insertBefore) {
+          c.insertBefore(itinDragPlaceholder, insertBefore);
+        } else {
+          c.appendChild(itinDragPlaceholder);
+        }
+      }
+    };
+
+    const endDrag = (e) => {
+      if (!itinIsPointerDown) return;
+      itinIsPointerDown = false;
+
+      if (itinDragTimer) {
+        clearTimeout(itinDragTimer);
+        itinDragTimer = null;
+        return;
+      }
+
+      if (itinDragActive && itinDraggedEl && itinDragPlaceholder) {
+        itinDragActive = false;
+        const c = document.querySelector(".itinerary-timeline");
+        const rows = c ? Array.from(c.querySelectorAll(".timeline-row:not(.is-dragging)")) : [];
+        let targetIndex = 0;
+        for (const r of rows) {
+          if (itinDragPlaceholder.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_PRECEDING) {
+            targetIndex++;
+          }
+        }
+        const oldIndex = Number(itinDraggedEl.dataset.index);
+
+        // cleanup
+        itinDraggedEl.classList.remove("is-dragging");
+        itinDraggedEl.style.position = "";
+        itinDraggedEl.style.left = "";
+        itinDraggedEl.style.top = "";
+        itinDraggedEl.style.width = "";
+        itinDraggedEl.style.zIndex = "";
+        itinDraggedEl.style.pointerEvents = "";
+        itinDraggedEl.style.opacity = "";
+        if (itinDragPlaceholder.parentNode) {
+          itinDragPlaceholder.parentNode.removeChild(itinDragPlaceholder);
+        }
+        itinDragPlaceholder = null;
+
+        if (oldIndex >= 0 && targetIndex >= 0 && targetIndex !== oldIndex) {
+          const date = state.selectedItineraryDate;
+          const arr = state.itinerary[date];
+          if (Array.isArray(arr)) {
+            const oldSpots = [...arr];
+            const [moved] = arr.splice(oldIndex, 1);
+            arr.splice(targetIndex, 0, moved);
+            // transport cleanup
+            arr.forEach((spot, j) => {
+              const oldIdx = oldSpots.indexOf(spot);
+              const oldPred = oldIdx > 0 ? oldSpots[oldIdx - 1] : null;
+              const newPred = j > 0 ? arr[j - 1] : null;
+              if (oldPred !== newPred) {
+                spot.transport = null;
+                spot.travelTime = null;
+              }
+            });
+            showToast("排序已更新：" + arr.map(s => s.name).join(","));
+            render();
+          }
+        } else {
+          showToast("未排序：" + oldIndex + " -> " + targetIndex);
+          render();
+        }
+        itinDraggedEl = null;
+      }
+    };
+
+    window.addEventListener("pointermove", (e) => {
+      if (!itinIsPointerDown) return;
+      if (itinDragTimer) {
+        const dist = Math.hypot(e.clientX - itinDragPointerStartX, e.clientY - itinDragPointerStartY);
+        if (dist > 8) {
+          clearTimeout(itinDragTimer);
+          itinDragTimer = null;
+          itinDragMoved = true;
+        }
+      }
+      if (itinDragActive && itinDraggedEl && itinDragPlaceholder) {
+        e.preventDefault();
+        itinDraggedEl.style.left = (e.clientX - dragOffsetX) + "px";
+        itinDraggedEl.style.top = (e.clientY - dragOffsetY) + "px";
+
+        const c = document.querySelector(".itinerary-timeline");
+        if (!c) return;
+        const rows = Array.from(c.querySelectorAll(".timeline-row:not(.is-dragging)"));
+        let insertBefore = null;
+        for (const r of rows) {
+          const rect = r.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) { insertBefore = r; break; }
+        }
+        if (insertBefore) {
+          c.insertBefore(itinDragPlaceholder, insertBefore);
+        } else {
+          c.appendChild(itinDragPlaceholder);
+        }
+      }
+    }, { passive: false });
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    window.addEventListener("blur", () => {
+      if (itinIsPointerDown || itinDragActive) endDrag();
+    });
+  }
+
   // 品項長按 1 秒拖曳排序與展開收合管理
   // ==========================================
 
@@ -2054,7 +2252,6 @@ function renderItinerary() {
       "</div>"
     : "";
 
-  // 單日景點。
   let body = "";
   if (days.length === 0) {
     body = '<div class="empty">目前尚未設定旅程日期，無法產生每日行程。</div>';
@@ -2062,50 +2259,105 @@ function renderItinerary() {
     body = '<div class="empty">請選擇日期。</div>';
   } else {
     const spots = Array.isArray(itinerary[selectedDate]) ? itinerary[selectedDate] : [];
-    const spotsHtml = spots.length
-      ? spots.map((spot) => {
-          const transport = spot.transport
-            ? '<div class="itinerary-transport">交通：' + escapeHtml(spot.transport) + '</div>'
-            : "";
-          const timeRange = (spot.departTime || spot.arriveTime)
-            ? '<div class="itinerary-time">' +
-              escapeHtml(spot.departTime || "") +
-              (spot.arriveTime ? " → " + escapeHtml(spot.arriveTime) : "") +
-              "</div>"
-            : "";
-          const address = spot.address
-            ? '<div class="itinerary-address">' + escapeHtml(spot.address) + '</div>'
-            : "";
-          const note = spot.note
-            ? '<div class="itinerary-note">' + escapeHtml(spot.note) + '</div>'
-            : "";
-          const mapLink = spot.mapUrl
-            ? '<a class="itinerary-map-link" href="' + escapeHtml(spot.mapUrl) + '" target="_blank" rel="noopener">地圖</a>'
-            : "";
-          return (
-            '<div class="itinerary-spot">' +
-            '<div class="itinerary-spot-name">' + escapeHtml(spot.name || "未命名景點") + mapLink +
-            '<button class="btn secondary small" type="button" data-action="edit-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-id="' + escapeHtml(spot.id) + '" style="margin-left:auto;">編輯</button>' +
-            '<button class="btn danger small" type="button" data-action="remove-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-id="' + escapeHtml(spot.id) + '">刪除</button>' +
-            "</div>" +
-            address +
-            timeRange +
-            transport +
-            note +
-            "</div>"
-          );
-        }).join("")
-      : '<div class="empty itinerary-empty">尚未安排景點</div>';
-    body =
-      '<div class="itinerary-day">' +
-      '<div class="itinerary-day-header">' +
-      '<span class="itinerary-date">' + escapeHtml(selectedDate.replace(/-/g, "/")) + "</span>" +
-      '<span class="itinerary-weekday">' + escapeHtml(weekdayZh(selectedDate)) + "</span>" +
-      '<button class="btn small" type="button" data-action="add-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" style="margin-left:auto;">＋新增景點</button>' +
-      "</div>" +
-      '<div class="itinerary-spots">' + spotsHtml + "</div>" +
+
+    const renderAddBtn = (index) =>
+      '<div class="timeline-add-row">' +
+      '<button class="btn small" type="button" data-action="add-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-index="' + index + '">＋新增景點</button>' +
       "</div>";
+
+    const renderSpot = (spot, index, isLast) => {
+      const arrive = spot.arriveTime ? escapeHtml(spot.arriveTime) : "";
+      const depart = spot.departTime ? escapeHtml(spot.departTime) : "";
+      const timeLabel = depart || arrive
+        ? (depart ? depart : "") + (depart && arrive ? " → " : "") + (arrive ? arrive : "")
+        : "";
+      const address = spot.address
+        ? '<div class="itinerary-address">' + escapeHtml(spot.address) + '</div>'
+        : "";
+      const note = spot.note
+        ? '<div class="itinerary-note">' + escapeHtml(spot.note) + '</div>'
+        : "";
+      const mapLink = spot.mapUrl
+        ? '<a class="itinerary-map-link" href="' + escapeHtml(spot.mapUrl) + '" target="_blank" rel="noopener">地圖</a>'
+        : "";
+      return (
+        '<div class="timeline-row" data-index="' + index + '">' +
+        '<div class="timeline-time-col">' +
+        (timeLabel ? '<span class="timeline-time">' + timeLabel + '</span>' : "") +
+        "</div>" +
+        '<div class="timeline-dot-col">' +
+        '<span class="timeline-dot"></span>' +
+        (isLast ? "" : '<span class="timeline-line"></span>') +
+        "</div>" +
+        '<div class="timeline-card-col">' +
+        '<div class="itinerary-spot" data-index="' + index + '" data-id="' + escapeHtml(spot.id) + '">' +
+        '<div class="itinerary-spot-name">' +
+        '<span class="itinerary-drag-handle" title="長按可拖曳排序" aria-label="拖曳手柄">⋮⋮</span>' +
+        escapeHtml(spot.name || "未命名景點") + mapLink +
+        '<button class="btn secondary small" type="button" data-action="edit-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-id="' + escapeHtml(spot.id) + '" style="margin-left:auto;">編輯</button>' +
+        '<button class="btn danger small" type="button" data-action="remove-itinerary-spot" data-date="' + escapeHtml(selectedDate) + '" data-id="' + escapeHtml(spot.id) + '">刪除</button>' +
+        "</div>" +
+        address +
+        note +
+        "</div>" +
+        "</div>" +
+        "</div>"
+      );
+    };
+
+    const renderTransportSegment = (date, destIndex, spot) => {
+      const transport = spot.transport;
+      const travelTime = spot.travelTime;
+      const transportText = transport
+        ? "交通：" + escapeHtml(transport) + (travelTime ? " · " + escapeHtml(String(travelTime)) + " 分鐘" : "")
+        : "交通：未設定";
+      return (
+        '<div class="timeline-transport-row">' +
+        '<div class="timeline-time-col"></div>' +
+        '<div class="timeline-dot-col"><span class="timeline-line"></span></div>' +
+        '<div class="timeline-card-col">' +
+        '<div class="itinerary-transport">' + transportText +
+        '<button class="btn secondary small" type="button" data-action="edit-itinerary-transport" data-date="' + escapeHtml(date) + '" data-index="' + destIndex + '" style="margin-left:8px;">編輯交通</button>' +
+        "</div>" +
+        "</div>" +
+        "</div>"
+      );
+    };
+
+    let timelineHtml = '<div class="itinerary-timeline">';
+
+    // 頂部新增景點入口
+    timelineHtml += renderAddBtn(0);
+
+    if (spots.length === 0) {
+      timelineHtml += '<div class="empty itinerary-empty">尚未安排景點</div>';
+    } else {
+      spots.forEach((spot, index) => {
+        timelineHtml += renderSpot(spot, index, index === spots.length - 1);
+        if (index < spots.length - 1) {
+          timelineHtml += renderTransportSegment(selectedDate, index + 1, spots[index + 1]);
+          timelineHtml += renderAddBtn(index + 1);
+        }
+      });
+      // 最後新增景點入口
+      timelineHtml += renderAddBtn(spots.length);
+    }
+
+    timelineHtml += "</div>";
+    body = timelineHtml;
   }
+
+  // 捲動日期列讓選取日期可見（僅在不可見時調整）。
+  setTimeout(() => {
+    const bar = document.querySelector(".itinerary-date-bar");
+    const active = bar && bar.querySelector(".itinerary-date-tab.active");
+    if (!bar || !active) return;
+    const barRect = bar.getBoundingClientRect();
+    const tabRect = active.getBoundingClientRect();
+    if (tabRect.left >= barRect.left && tabRect.right <= barRect.right) return;
+    const targetLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+    bar.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }, 0);
 
   return pageHeader(
     "TRAVEL ITINERARY",
@@ -2190,6 +2442,8 @@ function renderItinerary() {
 
     // 行程頁：初始化左右滑動切換日期手勢。
     if (state.page === "itinerary") initItinerarySwipe();
+    // 行程頁：初始化時間軸拖曳排序。
+    if (state.page === "itinerary") initItineraryTimelineDragAndDrop();
   }
 
 
@@ -2634,15 +2888,18 @@ function renderItinerary() {
       // 新增景點：開啟表單（日期自動帶入）。
       case "add-itinerary-spot": {
         const date = actionButton.dataset.date;
+        const index = actionButton.dataset.index;
         showDialog(
           '<h2>新增景點</h2>' +
-          '<form id="itinerary-spot-form" class="form" data-date="' + escapeHtml(date) + '" data-spot-id="">' +
+          '<form id="itinerary-spot-form" class="form" data-date="' + escapeHtml(date) + '" data-spot-id="" data-index="' + escapeHtml(index || "") + '">' +
           '<div class="field"><label>景點名稱 <span class="required-star">*</span></label>' +
           '<input name="name" required maxlength="80" placeholder="例如：博多運河城"></div>' +
           '<div class="field"><label>地址</label>' +
           '<input name="address" maxlength="200" placeholder="選填"></div>' +
           '<div class="field"><label>交通方式（從上一景點前往）</label>' +
           '<input name="transport" maxlength="40" placeholder="步行、地鐵、計程車..."></div>' +
+          '<div class="field"><label>預估移動時間（分鐘）</label>' +
+          '<input name="travelTime" type="number" min="0" step="1" placeholder="選填"></div>' +
           '<div class="form-grid">' +
           '<div class="field"><label>預計出發</label>' +
           '<input name="departTime" type="time"></div>' +
@@ -2718,6 +2975,26 @@ function renderItinerary() {
           state.selectedItineraryDate = date;
           render();
         }
+        break;
+      }
+
+      // 編輯景點間的交通資訊及預估移動時間。
+      // 修改日期：2026-11-28
+      case "edit-itinerary-transport": {
+        const date = actionButton.dataset.date;
+        const destIndex = Number(actionButton.dataset.index);
+        const spots = (state.itinerary && state.itinerary[date]) || [];
+        const spot = spots[destIndex];
+        if (!spot) { showToast("找不到該景點"); break; }
+        showDialog(
+          '<h2>編輯交通資訊</h2>' +
+          '<form id="itinerary-transport-form" class="form" data-date="' + escapeHtml(date) + '" data-index="' + destIndex + '">' +
+          '<div class="field"><label>交通方式（從上一景點前往）</label>' +
+          '<input name="transport" maxlength="40" value="' + escapeHtml(spot.transport || "") + '" placeholder="步行、地鐵、計程車..."></div>' +
+          '<div class="field"><label>預估移動時間（分鐘）</label>' +
+          '<input name="travelTime" type="number" min="0" step="1" value="' + escapeHtml(spot.travelTime || "") + '" placeholder="選填"></div>' +
+          '<button class="btn" type="submit">儲存交通</button></form>'
+        );
         break;
       }
 
@@ -2901,11 +3178,22 @@ function renderItinerary() {
 
       if (!state.itinerary[date]) state.itinerary[date] = [];
 
+      const travelTimeRaw = String(form.get("travelTime") || "").trim();
+      let travelTimeValue = null;
+      if (travelTimeRaw !== "") {
+        if (!/^\d+$/.test(travelTimeRaw)) {
+          showToast("預估移動時間請輸入非負整數");
+          return;
+        }
+        travelTimeValue = Number(travelTimeRaw);
+      }
+
       const spotData = {
         id: spotId || uid(),
         name: name,
         address: String(form.get("address") || "").trim(),
         transport: String(form.get("transport") || "").trim() || null,
+        travelTime: travelTimeValue,
         departTime: String(form.get("departTime") || "").trim(),
         arriveTime: String(form.get("arriveTime") || "").trim(),
         note: String(form.get("note") || "").trim()
@@ -2920,10 +3208,43 @@ function renderItinerary() {
         }
         showToast("景點已更新");
       } else {
-        state.itinerary[date].push(spotData);
+        const insertIndex = event.target.dataset.index;
+        if (insertIndex !== undefined && insertIndex !== "" && state.itinerary[date].length > 0) {
+          const idx = Math.max(0, Math.min(Number(insertIndex), state.itinerary[date].length));
+          state.itinerary[date].splice(idx, 0, spotData);
+        } else {
+          state.itinerary[date].push(spotData);
+        }
         showToast("景點已新增");
       }
 
+      $("#dialog").close();
+      state.page = "itinerary";
+      render();
+    }
+
+    // -------------------------
+    // 行程交通資訊編輯表單
+    // 修改日期：2026-11-28
+    // -------------------------
+    if (event.target.id === "itinerary-transport-form") {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      const date = event.target.dataset.date;
+      const idx = Number(event.target.dataset.index);
+      const spots = state.itinerary[date];
+      if (!Array.isArray(spots) || !spots[idx]) {
+        showToast("找不到該景點");
+        return;
+      }
+      spots[idx].transport = String(form.get("transport") || "").trim() || null;
+      const travelTimeRaw = String(form.get("travelTime") || "").trim();
+      if (travelTimeRaw !== "" && !/^\d+$/.test(travelTimeRaw)) {
+        showToast("預估移動時間請輸入非負整數");
+        return;
+      }
+      spots[idx].travelTime = travelTimeRaw === "" ? null : Number(travelTimeRaw);
+      showToast("交通資訊已更新");
       $("#dialog").close();
       state.page = "itinerary";
       render();
