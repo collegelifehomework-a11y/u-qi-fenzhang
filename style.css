@@ -974,4 +974,145 @@ input.readonly-calc {
   background: var(--green);
   color: #fff;
   border-color: var(--green);
+}/* 行程頁垂直時間軸（2026-11-28） */
+.itinerary-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0;
+}
+
+.timeline-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  touch-action: pan-y;
+}
+
+.timeline-time-col {
+  flex: 0 0 52px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.timeline-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.timeline-dot-col {
+  flex: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+  margin-top: 12px;
+}
+
+.timeline-line {
+  width: 2px;
+  flex: 1;
+  background: var(--line);
+  margin-top: 4px;
+  min-height: 20px;
+}
+
+.timeline-card-col {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.timeline-transport-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0;
+  touch-action: pan-y;
+}
+
+.timeline-transport-row .timeline-dot-col .timeline-line {
+  background: var(--muted);
+  opacity: 0.4;
+}
+
+.itinerary-transport {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.timeline-add-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 0 4px 68px;
+}
+
+.timeline-add-row .btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  min-height: 28px;
+}
+
+.itinerary-spot {
+  position: relative;
+}
+
+.itinerary-spot.is-dragging {
+  transform: scale(1.02);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  z-index: 100;
+  opacity: 0.9;
+  background: var(--surface);
+  cursor: grabbing !important;
+  touch-action: none;
+}
+
+.itinerary-drag-placeholder {
+  border: 2px dashed var(--green);
+  border-radius: 10px;
+  background: rgba(49, 91, 69, 0.08);
+  min-height: 60px;
+  pointer-events: none;
+}
+
+.itinerary-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+@media (max-width: 480px) {
+  .timeline-time-col {
+    flex: 0 0 44px;
+  }
+  .timeline-time {
+    font-size: 11px;
+  }
 }
